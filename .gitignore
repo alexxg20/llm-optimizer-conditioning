@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# Downloaded FineWeb token shards (~2 GB; re-download with upstream/data/cached_fineweb10B.py)
+pretraining/upstream/data/fineweb10B/
+
+# Training outputs: per-run reports, checkpoints, logs
+pretraining/reports/
+pretraining/checkpoints/
+pretraining/logs/
+pretraining/run.pid
+pretraining/training_feasibility_report.json
+pretraining/training_feasibility_report.md
+pretraining/oom_failures.json
+*.pt
+*.pt.tmp
