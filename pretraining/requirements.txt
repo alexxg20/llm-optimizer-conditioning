@@ -1,0 +1,6 @@
+# torch is installed by setup.sh, which picks the CUDA build that supports this machine's GPU.
+numpy==2.5.4
+# upstream/data/cached_fineweb10B.py downloads the pre-tokenized FineWeb shards with this.
+huggingface-hub==2.4.0
+# Read-only GPU temperature/utilization/power telemetry (official NVIDIA NVML bindings).
+nvidia-ml-py==13.615.71

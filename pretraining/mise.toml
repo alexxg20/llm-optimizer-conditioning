@@ -1,0 +1,22 @@
+[tools]
+python = "3.12"
+
+[env]
+_.python.venv = { path = ".venv", create = true }
+
+[tasks.setup]
+description = "Create .venv, install the torch build for this GPU and the pinned helpers"
+run = "bash setup.sh"
+
+[tasks.data]
+description = "Download FineWeb10B GPT-2 tokens: 1 val + 9 train shards (~2 GB, covers the 802M-token budget)"
+run = "python upstream/data/cached_fineweb10B.py 9"
+
+[tasks.preflight]
+description = "Memory preflight only (no CUDA context, no training)"
+run = "python train_feasibility.py --preflight-only"
+
+[tasks.test]
+description = "CPU-only unit tests (GPU hidden)"
+env = { CUDA_VISIBLE_DEVICES = "" }
+run = "python -m unittest discover -s tests -v"
