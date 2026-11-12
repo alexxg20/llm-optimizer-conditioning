@@ -14,6 +14,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import numpy as np
 import torch
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -421,25 +422,205 @@ class ReportTests(unittest.TestCase):
             self.assertEqual(json.loads(root.read_text())["run_id"], "equal-run")
 
 
+def write_shard(path, tokens):
+    header = np.zeros(256, dtype=np.int32)
+    header[:3] = (20240520, 1, len(tokens))
+    with open(path, "wb") as f:
+        f.write(header.tobytes())
+        f.write(np.asarray(tokens, dtype=np.uint16).tobytes())
+
+
+@contextlib.contextmanager
+def cuda_as_identity():
+    saved = torch.Tensor.cuda
+    torch.Tensor.cuda = lambda self, *args, **kwargs: self
+    try:
+        yield
+    finally:
+        torch.Tensor.cuda = saved
+
+
+class CheckpointPlanTests(unittest.TestCase):
+    def cfg(self, fraction=0.1, weights_only=False, on_exit=False):
+        cfg = tf.resolve_config(ORIG, 4096, no_ddp=True)
+        cfg.update(checkpoint_every_fraction=fraction, checkpoint_weights_only=weights_only,
+                   save_checkpoint_on_exit=on_exit, checkpoint_dir="/tmp/ckpt")
+        return cfg
+
+    def test_schedule(self):
+        self.assertEqual(tf.checkpoint_steps(1530, 0.1), list(range(0, 1531, 153)))
+        self.assertEqual(len(tf.checkpoint_steps(1530, 0.1)), 11)
+        self.assertEqual(tf.checkpoint_steps(1530, 0), [])
+        self.assertEqual(tf.checkpoint_steps(1530, 0.15)[-3:], [1150, 1380, 1530])
+        self.assertEqual(tf.checkpoint_steps(1530, 1), [0, 1530])
+        for bad in (-0.1, 1.5, 1e-5):
+            with self.assertRaises(ValueError):
+                tf.checkpoint_steps(1530, bad)
+
+    def test_size_estimate(self):
+        full_state = MM["param_bytes"] + MM["adam_state_bytes"] + MM["muon_state_bytes"]
+        data = 1530 * 128 * (4097 * 2 + 20)
+        plan = tf.checkpoint_plan(self.cfg(), MM)
+        self.assertEqual((plan["count"], plan["interval"]), (11, 153))
+        self.assertEqual(plan["bytes_per_checkpoint"], full_state)
+        self.assertEqual(plan["data_bytes"], data)
+        self.assertEqual(plan["total_bytes"], 11 * full_state + data)
+        self.assertEqual(tf.checkpoint_plan(self.cfg(weights_only=True), MM)["bytes_per_checkpoint"], MM["param_bytes"])
+        self.assertEqual(tf.checkpoint_plan(self.cfg(on_exit=True), MM)["count"], 12)
+        off = tf.checkpoint_plan(self.cfg(fraction=0), MM)
+        self.assertFalse(off["enabled"])
+        self.assertEqual(off["total_bytes"], 0)
+        exit_only = tf.checkpoint_plan(self.cfg(fraction=0, on_exit=True), MM)
+        self.assertEqual((exit_only["count"], exit_only["data_bytes"]), (1, data))
+
+    def test_disk_rule(self):
+        self.assertTrue(tf.disk_sufficient(10, 10))
+        self.assertFalse(tf.disk_sufficient(11, 10))
+        with tempfile.TemporaryDirectory() as d:
+            self.assertGreater(tf.free_bytes_at(Path(d) / "not" / "created" / "yet"), 0)
+
+    def test_description_and_projection(self):
+        text = tf.checkpoint_description(self.cfg())
+        self.assertIn("every 153 steps (11 checkpoints: steps 0, 153, ..., 1530)", text)
+        self.assertIn("No checkpoints", tf.checkpoint_description(self.cfg(fraction=0)))
+        steps = [fake_step(i, 20.0) for i in range(1, 10)]
+        s = tf.summarize(steps, 3, 10, ORIG["target_tokens"])
+        base = tf.project_wall_clock(30600.0, s, steps, [], 30.0, 3, 14)
+        with_ckpt = tf.project_wall_clock(30600.0, s, steps, [], 30.0, 3, 14, checkpoint_s_each=20.0, n_checkpoints=11)
+        self.assertAlmostEqual(with_ckpt["total_s"] - base["total_s"], 220.0)
+
+    def test_report_lists_checkpoints_and_projects_their_time(self):
+        report = synthetic_report(steps=[fake_step(i, 20.0) for i in range(1, 14)])
+        report["checkpoint_plan"] = tf.checkpoint_plan(self.cfg(), MM)
+        report["checkpoints"] = [{"step": 0, "path": "/tmp/ckpt/ckpt_step000000.pt", "data_file": None, "seconds": 5.0,
+                                  "size_bytes": 2 * tf.GIB},
+                                 {"step": 153, "path": "/tmp/ckpt/ckpt_step000153.pt", "data_file": "/tmp/ckpt/d.npz",
+                                  "seconds": 12.0, "size_bytes": 4 * tf.GIB}]
+        tf.finalize(report)
+        wc = report["estimates"]["wall_clock"]
+        self.assertEqual((wc["checkpoint_seconds_each"], wc["checkpoints_in_full_run"]), (12.0, 11))
+        md = tf.render_markdown(report)
+        self.assertIn("| Checkpoints written | 2 in /tmp/ckpt (steps 0, 153;", md)
+        self.assertIn("+ 11 checkpoints (12 s each)", md)
+
+
+class DataRecorderTests(unittest.TestCase):
+    T = 8
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        d = Path(self.tmp.name)
+        self.shards = [np.arange(50, dtype=np.uint16) + 1000 * k for k in range(2)]
+        for k, tokens in enumerate(self.shards):
+            write_shard(d / f"fineweb_train_{k + 1:06d}.bin", tokens)
+        self.pattern = str(d / "fineweb_train_*.bin")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def recorder(self, enabled=True):
+        return tf.DataRecorder(UP.DistributedDataLoader(self.pattern, self.T, 0, 1), enabled)
+
+    def test_positions_and_tokens_match_the_pinned_loader(self):
+        seen = []
+        with cuda_as_identity():
+            rec = self.recorder()
+            for _ in range(14):
+                x, y = rec.next_batch()
+                shard, offset, window = rec.pending
+                np.testing.assert_array_equal(window[:-1], x.numpy())
+                np.testing.assert_array_equal(window[1:], y.numpy())
+                np.testing.assert_array_equal(window, self.shards[shard][offset:offset + self.T + 1])
+                seen.append((shard, offset))
+        # 6 windows fit in a 50-token shard at T=8; then the next shard, then the wrap back to the first.
+        self.assertEqual(seen, [(0, o) for o in range(0, 41, 8)] + [(1, o) for o in range(0, 41, 8)] + [(0, 0), (0, 8)])
+        self.assertEqual(rec.current_shard, 0)
+
+    def test_consumed_bookkeeping_and_record_files(self):
+        with cuda_as_identity():
+            rec = self.recorder()
+            x, y = rec.next_batch()
+            for step in (1, 2):
+                rec.begin_step()
+                for i in (1, 2, 3):
+                    rec.consume(step, i)
+                    x, y = rec.next_batch()
+                rec.commit_step()
+            rec.begin_step()
+            rec.consume(3, 1)
+            x, y = rec.next_batch()
+            rec.discard_step()
+        self.assertEqual(len(rec.buffer), 6)
+        self.assertEqual(rec.resume_position(), (1, 0))
+        meta = {"run_id": "r", "upstream_sha256": "u", "harness_sha256": "h",
+                "shard_sha256": {"fineweb_train_000001.bin": "abc"}}
+        with tempfile.TemporaryDirectory() as out:
+            npz, sidecar = rec.flush(out, 1, 2, meta)
+            self.assertEqual(npz.name, "data_steps000001-000002.npz")
+            with np.load(npz) as data:
+                self.assertEqual(sorted(data.files), ["micro_batch", "offset", "shard_index", "step", "tokens"])
+                self.assertEqual((data["tokens"].shape, data["tokens"].dtype), ((6, 9), np.uint16))
+                self.assertEqual(data["step"].tolist(), [1, 1, 1, 2, 2, 2])
+                self.assertEqual(data["micro_batch"].tolist(), [1, 2, 3, 1, 2, 3])
+                self.assertEqual(data["shard_index"].tolist(), [0] * 6)
+                self.assertEqual(data["offset"].tolist(), list(range(0, 41, 8)))
+                for row, off in zip(data["tokens"], data["offset"]):
+                    np.testing.assert_array_equal(row, self.shards[0][off:off + 9])
+            on_disk = json.loads(npz.with_suffix(".json").read_text())
+            self.assertEqual(on_disk, json.loads(json.dumps(sidecar)))
+            self.assertEqual((on_disk["T"], on_disk["steps"], on_disk["n_micro_batches"]), (8, [1, 2], 6))
+            self.assertEqual([s["sha256"] for s in on_disk["shards"]], ["abc", None])
+            self.assertIn("x = tokens[i, :-1]", on_disk["definition"])
+            self.assertEqual((on_disk["run_id"], on_disk["harness_sha256"]), ("r", "h"))
+            self.assertNotIn("shard_sha256", on_disk)
+            self.assertEqual(list(Path(out).glob("*.tmp")), [])
+        self.assertEqual(rec.buffer, [])
+
+    def test_disabled_recorder_keeps_no_tokens(self):
+        with cuda_as_identity():
+            rec = self.recorder(enabled=False)
+            rec.next_batch()
+            rec.begin_step()
+            rec.consume(1, 1)
+            rec.next_batch()
+            rec.commit_step()
+        self.assertIsNone(rec.pending[2])
+        self.assertEqual(rec.buffer, [])
+
+
 class GateTests(unittest.TestCase):
     """main() in-process with fixed VRAM numbers; train() is replaced so it can never start."""
 
-    def run_main(self, *argv):
+    def run_main(self, *argv, free_bytes=None):
         out = io.StringIO()
 
         def forbidden_train(*args, **kwargs):
             raise AssertionError("train() must not be reached in tests")
 
         with tempfile.TemporaryDirectory() as d, contextlib.redirect_stdout(out):
-            saved = tf.GpuTelemetry.memory, tf.train
+            saved = tf.GpuTelemetry.memory, tf.train, tf.free_bytes_at
             tf.GpuTelemetry.memory = lambda self: VRAM_12GB
             tf.train = forbidden_train
+            if free_bytes is not None:
+                tf.free_bytes_at = lambda path: free_bytes
             try:
                 code = tf.main([*argv, "--output-dir", d])
             finally:
-                tf.GpuTelemetry.memory, tf.train = saved
+                tf.GpuTelemetry.memory, tf.train, tf.free_bytes_at = saved
             files = sorted(str(p.relative_to(d)) for p in Path(d).rglob("*.json"))
         return code, out.getvalue(), files
+
+    def test_disk_preflight_refuses_when_checkpoints_do_not_fit(self):
+        code, out, _ = self.run_main("--micro-batch-tokens", "4096", "--no-ddp", "--accept-deviations",
+                                     "--checkpoint-every-fraction", "0.1", free_bytes=10 * tf.GIB)
+        self.assertEqual(code, tf.EXIT_REFUSED)
+        self.assertIn("REFUSED: the checkpoints of a full run need", out)
+        self.assertIn("quota may be lower than the free space shown", out)
+
+    def test_preflight_only_prints_checkpoint_plan(self):
+        code, out, _ = self.run_main("--preflight-only", "--checkpoint-every-fraction", "0.1")
+        self.assertEqual(code, tf.EXIT_OK)
+        self.assertIn("Checkpoints: 11 ×", out)
 
     def test_original_refused_by_preflight(self):
         code, out, files = self.run_main()

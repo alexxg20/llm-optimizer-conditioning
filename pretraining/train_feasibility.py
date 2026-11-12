@@ -38,6 +38,7 @@ import uuid
 from collections import deque
 from pathlib import Path
 
+import numpy as np
 import torch
 
 PROJECT_DIR = Path(__file__).resolve().parent
@@ -74,6 +75,8 @@ CALIBRATION_METHOD = ("forward+backward only, no optimizer update, real data, af
                       "the per-micro-batch difference is interpolated linearly between those windows (clamped outside), "
                       "multiplied by the accumulation steps and averaged over the real 1530-step window schedule")
 MIN_STEPS_FOR_FIRM_VERDICT = 10
+# step (int32) + micro_batch (int32) + shard_index (int32) + offset (int64) stored per recorded micro-batch.
+DATA_RECORD_INDEX_BYTES = 20
 
 GIB = 2**30
 CUDA_CONTEXT_RESERVE_GIB = 0.5
@@ -242,6 +245,34 @@ def config_label(c):
             f"{'DDP' if c['use_ddp'] else 'no DDP'}")
 
 
+def checkpoint_steps(num_iterations, fraction):
+    """Completed-step counts at which periodic checkpoints are written: 0, k, 2k, ... and the final step."""
+    if fraction == 0:
+        return []
+    if not 0 < fraction <= 1:
+        raise ValueError(f"--checkpoint-every-fraction must be in (0, 1], or 0 to disable; got {fraction}")
+    interval = round(num_iterations * fraction)
+    if interval < 1:
+        raise ValueError(f"--checkpoint-every-fraction {fraction} gives an interval below one step")
+    return sorted(set(range(0, num_iterations + 1, interval)) | {num_iterations})
+
+
+def checkpoint_description(cfg):
+    steps = checkpoint_steps(cfg["num_iterations"], cfg.get("checkpoint_every_fraction", 0))
+    parts = []
+    if steps:
+        parts.append(f"every {steps[1] - steps[0]} steps ({len(steps)} checkpoints: steps {steps[0]}, {steps[1]}, ..., {steps[-1]})")
+    if cfg.get("save_checkpoint_on_exit"):
+        parts.append("on exit for the last completed step")
+    if not parts:
+        return "No checkpoints are written (the original saves model + optimizer state at the final step only)."
+    what = "weights only" if cfg.get("checkpoint_weights_only") else "weights + optimizer/scheduler state"
+    return (f"Checkpoints ({what}, unwrapped state_dict, position of the next unconsumed micro-batch) are written "
+            f"{' and '.join(parts)}, each with a record of the exact token windows consumed since the previous "
+            "checkpoint. They are written outside the timed steps and added to the wall-clock projection; the "
+            "original saves model + optimizer state at the final step only.")
+
+
 def non_training_differences(cfg):
     out = [
         f"Runs on 1 GPU (world_size=1) instead of the designed 8; the pinned code itself handles this via "
@@ -254,7 +285,7 @@ def non_training_differences(cfg):
         f"micro-batches, optimizer steps); the first {cfg.get('warmup_steps', '?')} steps (compilation/warm-up) are "
         "excluded from throughput (the original excludes its first 10 steps).",
         "Validation and checkpoint time are measured separately and excluded from step time (as in the original).",
-        "Model checkpoint: saved only with --save-checkpoint-on-exit (the original always saves at the final step).",
+        checkpoint_description(cfg),
         "Stops gracefully on Ctrl+C / SIGTERM / temperature limit after the current micro-batch; the partial "
         "optimizer step is discarded and not counted.",
         "Logs and reports are written to reports/<run_id>/ instead of logs/<uuid>.txt.",
@@ -881,6 +912,118 @@ def window_correction(ma_step_s, accum, points, w_measured, num_iterations, step
             "per_micro_batch_s": {str(w): t for w, t in pts}}
 
 
+def checkpoint_plan(cfg, mm):
+    """Checkpoint schedule and an upper estimate of the disk space a full run needs."""
+    steps = checkpoint_steps(cfg["num_iterations"], cfg.get("checkpoint_every_fraction", 0))
+    count = len(steps) + (1 if cfg.get("save_checkpoint_on_exit") else 0)
+    state = 0 if cfg.get("checkpoint_weights_only") else mm["adam_state_bytes"] + mm["muon_state_bytes"]
+    per_checkpoint = mm["param_bytes"] + state
+    micro_batches = cfg["num_iterations"] * cfg["train_accumulation_steps"]
+    data = micro_batches * ((cfg["micro_batch_tokens"] + 1) * 2 + DATA_RECORD_INDEX_BYTES) if count else 0
+    return {"enabled": count > 0, "steps": steps, "interval": steps[1] - steps[0] if len(steps) > 1 else None,
+            "count": count, "weights_only": bool(cfg.get("checkpoint_weights_only")),
+            "bytes_per_checkpoint": per_checkpoint, "data_bytes": data, "total_bytes": count * per_checkpoint + data,
+            "directory": cfg.get("checkpoint_dir")}
+
+
+def disk_sufficient(total_bytes, free_bytes):
+    return free_bytes >= total_bytes
+
+
+def free_bytes_at(path):
+    path = Path(path)
+    while not path.exists():
+        path = path.parent
+    return shutil.disk_usage(path).free
+
+
+def format_checkpoint_plan(plan, free_bytes):
+    what = "weights only" if plan["weights_only"] else "weights + optimizer/scheduler state"
+    return (f"Checkpoints: {plan['count']} × {plan['bytes_per_checkpoint'] / GIB:.2f} GiB ({what}) + consumed-data "
+            f"records {plan['data_bytes'] / GIB:.2f} GiB = {plan['total_bytes'] / GIB:.1f} GiB for a full run in "
+            f"{plan['directory']}; free there: {free_bytes / GIB:.1f} GiB. On a network filesystem (e.g. the Gnoto "
+            "/home NAS) the quota may be lower than the free space shown.")
+
+
+def file_sha256(path):
+    with open(path, "rb") as f:
+        return hashlib.file_digest(f, "sha256").hexdigest()
+
+
+class DataRecorder:
+    """Wraps the pinned DistributedDataLoader and records the exact T+1 token window of each consumed micro-batch.
+
+    `pending` is the batch currently held in (x, y), i.e. the next micro-batch the model will consume.
+    """
+
+    def __init__(self, loader, enabled):
+        self.loader = loader
+        self.enabled = enabled
+        self.pending = None
+        self.step_start = None
+        self._current = []
+        self.buffer = []
+
+    def __getattr__(self, name):
+        return getattr(self.__dict__["loader"], name)
+
+    def next_batch(self):
+        shard, offset = self.loader.current_shard, self.loader.current_position
+        window = np.array(self.loader.tokens[offset:offset + self.loader.T + 1]) if self.enabled else None
+        x, y = self.loader.next_batch()
+        self.pending = (shard, offset, window)
+        return x, y
+
+    def begin_step(self):
+        self._current = []
+        self.step_start = self.pending[:2]
+
+    def consume(self, step, micro_batch):
+        if self.enabled:
+            self._current.append((step, micro_batch) + self.pending)
+
+    def commit_step(self):
+        self.buffer.extend(self._current)
+        self._current, self.step_start = [], None
+
+    def discard_step(self):
+        self._current = []
+
+    def resume_position(self):
+        """(shard index, offset) of the first micro-batch that no completed optimizer step has used."""
+        return self.step_start if self.step_start is not None else self.pending[:2]
+
+    def flush(self, directory, first_step, last_step, meta):
+        """Writes the buffered micro-batches as data_steps{first}-{last}.npz plus a JSON sidecar, then clears them."""
+        rows = self.buffer
+        npz = Path(directory) / f"data_steps{first_step:06d}-{last_step:06d}.npz"
+        tmp = npz.with_name(npz.name + ".tmp")
+        with open(tmp, "wb") as f:
+            np.savez(f, tokens=np.stack([r[4] for r in rows]).astype(np.uint16),
+                     step=np.array([r[0] for r in rows], dtype=np.int32),
+                     micro_batch=np.array([r[1] for r in rows], dtype=np.int32),
+                     shard_index=np.array([r[2] for r in rows], dtype=np.int32),
+                     offset=np.array([r[3] for r in rows], dtype=np.int64))
+        os.replace(tmp, npz)
+        hashes = meta.get("shard_sha256") or {}
+        sidecar = {
+            "file": npz.name,
+            "steps": [first_step, last_step],
+            "n_micro_batches": len(rows),
+            "T": self.loader.T,
+            "definition": ("Row i of `tokens` is the T+1 token window micro-batch i read: x = tokens[i, :-1], "
+                           "y = tokens[i, 1:] (next-token targets). It came from shard `shard_index[i]` at token "
+                           "`offset[i]` and was consumed by optimizer step `step[i]` (1-based) as micro-batch "
+                           "`micro_batch[i]` (1-based). Micro-batches of discarded partial steps are not included."),
+            "shards": [{"index": i, "file": Path(f).name, "sha256": hashes.get(Path(f).name)}
+                       for i, f in enumerate(self.loader.files)],
+            **{k: v for k, v in meta.items() if k != "shard_sha256"},
+        }
+        atomic_write(npz.with_suffix(".json"), json.dumps(sidecar, indent=2))
+        self.buffer = []
+        return npz, sidecar
+
+
 def steady_eval_seconds(e):
     # The first validation micro-batch carries the eval-graph compilation; extrapolate from the others.
     n = e.get("val_steps") or 0
@@ -889,7 +1032,8 @@ def steady_eval_seconds(e):
     return (e["duration_s"] - e["first_microbatch_s"]) * n / (n - 1)
 
 
-def project_wall_clock(training_s, summary, steps, evals, setup_time_s, warmup_steps, n_evals):
+def project_wall_clock(training_s, summary, steps, evals, setup_time_s, warmup_steps, n_evals,
+                       checkpoint_s_each=None, n_checkpoints=0):
     if "throughput_mean_tok_s" not in summary:
         return None
     warm = steps[:warmup_steps]
@@ -897,7 +1041,8 @@ def project_wall_clock(training_s, summary, steps, evals, setup_time_s, warmup_s
     steady = [steady_eval_seconds(e) for e in evals]
     eval_s = statistics.median(steady) if steady else None
     eval_compile_excess = max(evals[0]["duration_s"] - steady[0], 0.0) if evals else 0.0
-    total = training_s + (setup_time_s or 0.0) + compile_overhead + (eval_s or 0.0) * n_evals + eval_compile_excess
+    total = (training_s + (setup_time_s or 0.0) + compile_overhead + (eval_s or 0.0) * n_evals + eval_compile_excess
+             + (checkpoint_s_each or 0.0) * n_checkpoints)
     return {
         "total_s": total,
         "training_s": training_s,
@@ -907,6 +1052,8 @@ def project_wall_clock(training_s, summary, steps, evals, setup_time_s, warmup_s
         "eval_compile_excess_s": eval_compile_excess,
         "evals_in_full_run": n_evals,
         "validation_not_measured": eval_s is None,
+        "checkpoint_seconds_each": checkpoint_s_each,
+        "checkpoints_in_full_run": n_checkpoints,
     }
 
 
@@ -993,6 +1140,14 @@ def uncertainty_notes(report):
                      f"({calib.get('status')}: {calib.get('reason')}); measured steps used early-schedule attention "
                      f"windows (mean over the schedule is {statistics.fmean(schedule_windows(1530)):.0f} tokens), so "
                      "it is likely low.")
+    plan = report.get("checkpoint_plan") or {}
+    written = report.get("checkpoints") or []
+    if plan.get("steps") and "total_training_s" in est:
+        if not written:
+            notes.append("Checkpoint time was not measured; the wall-clock projection excludes it.")
+        elif all(c["step"] == 0 for c in written):
+            notes.append("Checkpoint time comes only from the step-0 checkpoint, which has no optimizer state or data "
+                         "record yet; later checkpoints take longer.")
     if wc.get("validation_not_measured"):
         notes.append("Validation time was not measured; the wall-clock projection excludes it.")
     data = report.get("data") or {}
@@ -1048,8 +1203,13 @@ def finalize(report):
         delta = corr["delta_total_s"] if corr else 0.0
         training = s["total_steady_state_s"] + delta
         shift = lambda pair: None if pair is None else [v + delta for v in pair]
+        plan = report.get("checkpoint_plan") or {}
+        written = report.get("checkpoints") or []
+        later = [c["seconds"] for c in written if c["step"] > 0]
+        ckpt_each = statistics.median(later) if later else (statistics.median(c["seconds"] for c in written) if written else None)
         wall = project_wall_clock(training, s, meas["steps"], meas["evals"], meas.get("setup_time_s"),
-                                  cfg["warmup_steps"], n_evals_full_run(cfg["num_iterations"], cfg["val_loss_every"]))
+                                  cfg["warmup_steps"], n_evals_full_run(cfg["num_iterations"], cfg["val_loss_every"]),
+                                  ckpt_each, len(plan.get("steps") or []))
         est.update({
             "throughput_tok_s": s["throughput_ma_tok_s"],
             "window_correction_applied": corr is not None,
@@ -1196,6 +1356,11 @@ def render_markdown(report):
             L.append(f"| Validation at step {e['step']} | loss {e['val_loss']:.4f}, {e['duration_s']:.1f} s "
                      f"(first micro-batch {_f(e.get('first_microbatch_s'), '.1f', ' s')}"
                      f"{', includes compilation' if e['includes_compile'] else ''}; steady ≈ {steady_eval_seconds(e):.1f} s) |")
+        written = report.get("checkpoints") or []
+        if written:
+            L.append(f"| Checkpoints written | {len(written)} in {Path(written[-1]['path']).parent} (steps "
+                     f"{', '.join(str(w['step']) for w in written)}; median {statistics.median(w['seconds'] for w in written):.1f} s, "
+                     f"{sum(w['size_bytes'] for w in written) / GIB:.2f} GiB in total) |")
         calib = report.get("window_calibration") or {}
         if calib.get("status") == "done":
             L.append("| Window calibration (median forward+backward per micro-batch) | "
@@ -1223,8 +1388,10 @@ def render_markdown(report):
               f"{fmt_duration(wc.get('training_s'))} + {wc.get('evals_in_full_run')} validation passes "
               f"({_f(wc.get('eval_seconds_each'), '.0f', ' s')} each, steady) + validation compile "
               f"{_f(wc.get('eval_compile_excess_s'), '.0f', ' s')} + training compile/warm-up "
-              f"{_f(wc.get('compile_warmup_overhead_s'), '.0f', ' s')} + setup {_f(wc.get('setup_s'), '.0f', ' s')}. "
-              f"Measured with {config_label(c)}.",
+              f"{_f(wc.get('compile_warmup_overhead_s'), '.0f', ' s')} + setup {_f(wc.get('setup_s'), '.0f', ' s')}"
+              + (f" + {wc['checkpoints_in_full_run']} checkpoints ({_f(wc.get('checkpoint_seconds_each'), '.0f', ' s')} each)"
+                 if wc.get("checkpoints_in_full_run") else "")
+              + f". Measured with {config_label(c)}.",
               training_line,
               f"- Training only, uncorrected (basis of the live ETA; throughput of the last {s['ma_window']} timed steps): "
               f"{fmt_duration(est['total_steady_state_s'])}.",
@@ -1424,7 +1591,9 @@ def train(up, cfg, run, telemetry, stop, registry_path, gpu):
         run.log(up.code + "=" * 100 + "\n" + Path(__file__).read_text() + "=" * 100, console=False)
         run.log(f"Running pytorch {torch.version.__version__} compiled for CUDA {torch.version.cuda}\nnvidia-smi:\n{smi}\n" + "=" * 100, console=False)
 
-        train_loader = DistributedDataLoader(str(UPSTREAM_DIR / args.input_bin), T, ddp_rank, ddp_world_size)
+        plan = report.get("checkpoint_plan") or {}
+        train_loader = DataRecorder(DistributedDataLoader(str(UPSTREAM_DIR / args.input_bin), T, ddp_rank, ddp_world_size),
+                                    enabled=bool(plan.get("enabled")))
         val_loader = DistributedDataLoader(str(UPSTREAM_DIR / args.input_val_bin), T, ddp_rank, ddp_world_size)
         run.log(f"Training DataLoader: total number of tokens: {train_loader.ntok_total} across {len(train_loader.files)} files")
         run.log(f"Validation DataLoader: total number of tokens: {val_loader.ntok_total} across {len(val_loader.files)} files")
@@ -1447,6 +1616,13 @@ def train(up, cfg, run, telemetry, stop, registry_path, gpu):
         optimizer3 = optimizers[2]
         get_lr = make_get_lr(args)
         schedulers = [torch.optim.lr_scheduler.LambdaLR(opt, get_lr) for opt in optimizers]
+        ckpt = None
+        if plan.get("enabled"):
+            ckpt = {"dir": Path(cfg["checkpoint_dir"]), "steps": set(plan["steps"]), "last_step": None,
+                    "weights_only": cfg["checkpoint_weights_only"],
+                    "meta": {"run_id": report["run_id"], "upstream_sha256": UPSTREAM_SHA256,
+                             "harness_sha256": file_sha256(__file__),
+                             "shard_sha256": (report.get("data") or {}).get("shard_sha256") or {}}}
 
         run.log(f"\nTraining: {cfg['train_accumulation_steps']} micro-batches × {T:,} tokens = {cfg['tokens_per_step']:,} "
                 f"tokens/step, {args.num_iterations} steps, target {cfg['target_tokens']:,} tokens. "
@@ -1500,12 +1676,16 @@ def train(up, cfg, run, telemetry, stop, registry_path, gpu):
                         f'step_avg:{1000 * train_time_s / timed if timed else float("nan"):.2f}ms (validation took {eval_s:.1f} s)')
                 run.save()
 
+            if ckpt is not None and ckpt["last_step"] != step and (
+                    step in ckpt["steps"] or (last_step and cfg["save_checkpoint_on_exit"])):
+                where.update(phase="checkpoint", step=step, micro_batch=0)
+                save_checkpoint(run, ckpt, raw_model, optimizers, schedulers, train_loader, step)
+
             if last_step:
-                if cfg["save_checkpoint_on_exit"]:
-                    save_checkpoint(run, up, raw_model, optimizers, step)
                 break
 
             model.train()
+            train_loader.begin_step()
             if step == 0:
                 run.log("step 1: compiling (torch.compile + coordinate-descent tuning); this can take several minutes...")
             torch.cuda.synchronize()
@@ -1517,6 +1697,7 @@ def train(up, cfg, run, telemetry, stop, registry_path, gpu):
                     completed = False
                     break
                 where.update(phase="forward/backward", step=step + 1, micro_batch=i)
+                train_loader.consume(step + 1, i)
                 ctx = model.no_sync() if (cfg["use_ddp"] and i < train_accumulation_steps) else contextlib.nullcontext()
                 with ctx:
                     loss = model(x, y, attn_blocksize=attn_blocksize)
@@ -1525,6 +1706,7 @@ def train(up, cfg, run, telemetry, stop, registry_path, gpu):
                 train_loss = loss.detach()
             if not completed:
                 model.zero_grad(set_to_none=True)
+                train_loader.discard_step()
                 run.log(f"stopped during step {step + 1} after {i - 1}/{train_accumulation_steps} micro-batches; "
                         "this partial step is discarded")
                 break
@@ -1539,6 +1721,7 @@ def train(up, cfg, run, telemetry, stop, registry_path, gpu):
             model.zero_grad(set_to_none=True)
             torch.cuda.synchronize()
             t1 = time.monotonic()
+            train_loader.commit_step()
 
             step_time = t1 - t0
             tokens = train_accumulation_steps * T * ddp_world_size
@@ -1570,6 +1753,9 @@ def train(up, cfg, run, telemetry, stop, registry_path, gpu):
 
         if stop.requested:
             report["status"] = "stopped-thermal" if stop.reason == "thermal" else "interrupted"
+            if ckpt is not None and cfg["save_checkpoint_on_exit"] and steps and ckpt["last_step"] != len(steps):
+                where.update(phase="checkpoint", step=len(steps), micro_batch=0)
+                save_checkpoint(run, ckpt, raw_model, optimizers, schedulers, train_loader, len(steps))
             if stop.reason in ("user-interrupt", "sigterm") and steps and cfg["window_calibration"]:
                 where.update(phase="window calibration", micro_batch=0)
                 w_measured = steps[-1]["attn_blocksize"]
@@ -1594,8 +1780,6 @@ def train(up, cfg, run, telemetry, stop, registry_path, gpu):
             elif cfg["window_calibration"]:
                 report["window_calibration"] = {"status": "not-run", "reason": "only after a Ctrl+C/SIGTERM stop with "
                                                 "completed steps (not after a thermal stop)"}
-            if cfg["save_checkpoint_on_exit"] and steps:
-                save_checkpoint(run, up, raw_model, optimizers, len(steps))
             return EXIT_THERMAL if stop.reason == "thermal" else EXIT_OK
         report["status"] = "completed"
         return EXIT_OK
@@ -1622,14 +1806,40 @@ def train(up, cfg, run, telemetry, stop, registry_path, gpu):
             dist.destroy_process_group()
 
 
-def save_checkpoint(run, up, raw_model, optimizers, step):
-    path = run.dir / ('state_step%06d.pt' % step)
-    run.log(f"saving checkpoint to {path} (several GB)...")
-    log = dict(step=step, code=up.code, model=raw_model.state_dict(), optimizers=[opt.state_dict() for opt in optimizers])
+def save_checkpoint(run, ckpt, raw_model, optimizers, schedulers, train_loader, step):
+    """Writes ckpt_step{step}.pt and the data record for the steps since the previous checkpoint."""
+    torch.cuda.synchronize()
+    t = time.monotonic()
+    ckpt["dir"].mkdir(parents=True, exist_ok=True)
+    data_file = None
+    if train_loader.buffer:
+        first = (ckpt["last_step"] or 0) + 1
+        npz, _ = train_loader.flush(ckpt["dir"], first, step, ckpt["meta"])
+        data_file = npz
+    shard, offset = train_loader.resume_position()
+    payload = {
+        "step": step,
+        "model": getattr(raw_model, "_orig_mod", raw_model).state_dict(),
+        "train_loader_next": {"shard_index": shard, "shard_file": Path(train_loader.files[shard]).name, "offset": offset},
+        "data_file": None if data_file is None else data_file.name,
+        "config": run.report["effective_config"],
+        "upstream_sha256": ckpt["meta"]["upstream_sha256"],
+        "harness_sha256": ckpt["meta"]["harness_sha256"],
+    }
+    if not ckpt["weights_only"]:
+        payload["optimizers"] = [opt.state_dict() for opt in optimizers]
+        payload["schedulers"] = [sched.state_dict() for sched in schedulers]
+    path = ckpt["dir"] / f"ckpt_step{step:06d}.pt"
     tmp = path.with_name(path.name + ".tmp")
-    torch.save(log, tmp)
+    torch.save(payload, tmp)
     os.replace(tmp, path)
-    run.report["checkpoint"] = {"path": str(path), "step": step, "size_gib": path.stat().st_size / GIB}
+    seconds = time.monotonic() - t
+    ckpt["last_step"] = step
+    size = path.stat().st_size + (data_file.stat().st_size if data_file else 0)
+    run.report["checkpoints"].append({"step": step, "path": str(path), "data_file": None if data_file is None else str(data_file),
+                                      "seconds": seconds, "size_bytes": size})
+    run.log(f"checkpoint at step {step}: {path.name}" + (f" + {data_file.name}" if data_file else "")
+            + f" ({size / GIB:.2f} GiB, {seconds:.1f} s)")
 
 
 # ----------------------------------------------------------------------------- main
@@ -1648,7 +1858,12 @@ def parse_args(argv=None):
     p.add_argument("--temp-poll-interval", type=float, default=2.0, help="seconds between telemetry samples (2)")
     p.add_argument("--warmup-steps", type=int, default=3, help="optimizer steps excluded from throughput (compilation; 3)")
     p.add_argument("--ma-window", type=int, default=10, help="moving-average window in optimizer steps (10)")
-    p.add_argument("--save-checkpoint-on-exit", action="store_true", help="save model+optimizer state on exit (~4 GB)")
+    p.add_argument("--save-checkpoint-on-exit", action="store_true",
+                   help="also checkpoint the last completed step on exit (same structure as periodic checkpoints)")
+    p.add_argument("--checkpoint-every-fraction", type=float, default=0.0,
+                   help="checkpoint every round(1530 x F) steps, including step 0 and the final step (0 = off)")
+    p.add_argument("--checkpoint-weights-only", action="store_true", help="omit optimizer/scheduler state from checkpoints")
+    p.add_argument("--checkpoint-dir", default=None, help="checkpoint directory (default: <output-dir>/checkpoints/<run_id>/)")
     p.add_argument("--no-window-calibration", action="store_true",
                    help="skip the short post-stop attention-window calibration (the estimate is then flagged as likely low)")
     p.add_argument("--output-dir", default=str(PROJECT_DIR), help="where reports/, the latest report and oom_failures.json go")
@@ -1658,6 +1873,10 @@ def parse_args(argv=None):
         p.error("--warmup-steps must be >= 1 (the first step includes compilation)")
     if a.ma_window < 1 or a.temp_poll_interval <= 0:
         p.error("--ma-window must be >= 1 and --temp-poll-interval > 0")
+    try:
+        checkpoint_steps(1530, a.checkpoint_every_fraction)
+    except ValueError as e:
+        p.error(str(e))
     return a
 
 
@@ -1688,7 +1907,8 @@ def new_report(run_id, orig, cfg, deviations, mm, gpu, env, preflight):
                                {"status": "disabled", "reason": "--no-window-calibration"}),
         "oom": None,
         "error": None,
-        "checkpoint": None,
+        "checkpoint_plan": None,
+        "checkpoints": [],
     }
 
 
@@ -1734,7 +1954,8 @@ def main(argv=None):
         return EXIT_REFUSED
     cfg.update(warmup_steps=cli.warmup_steps, ma_window=cli.ma_window, max_temp_c=cli.max_temp,
                temp_poll_interval_s=cli.temp_poll_interval, save_checkpoint_on_exit=cli.save_checkpoint_on_exit,
-               window_calibration=not cli.no_window_calibration, deviations_accepted=cli.accept_deviations)
+               window_calibration=not cli.no_window_calibration, deviations_accepted=cli.accept_deviations,
+               checkpoint_every_fraction=cli.checkpoint_every_fraction, checkpoint_weights_only=cli.checkpoint_weights_only)
     deviations = list_deviations(cfg, orig)
     output_dir = Path(cli.output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -1752,11 +1973,16 @@ def main(argv=None):
     print()
 
     run_id = datetime.datetime.now().strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]
+    cfg["checkpoint_dir"] = str(Path(cli.checkpoint_dir).resolve() if cli.checkpoint_dir else output_dir / "checkpoints" / run_id)
     report = new_report(run_id, orig, cfg, deviations, mm, gpu, host_environment(), preflight)
     report["data"] = check_data(up, cfg, orig)
     d = report["data"]
     print(f"Data: {d['train_shards']} train shard(s) with {d['train_tokens']:,} tokens, {d['val_shards']} val shard(s); "
           f"covers {d['steps_covered']} of {cfg['num_iterations']} steps at this micro-batch size.\n")
+    plan = report["checkpoint_plan"] = checkpoint_plan(cfg, mm)
+    if plan["enabled"]:
+        plan["free_bytes"] = free_bytes_at(plan["directory"])
+        print(format_checkpoint_plan(plan, plan["free_bytes"]) + "\n")
     sel = preflight["selected"]
 
     if cli.preflight_only:
@@ -1808,6 +2034,12 @@ def main(argv=None):
     if data["warning"]:
         print(f"warning: {data['warning']}\n")
 
+    if plan["enabled"] and not disk_sufficient(plan["total_bytes"], plan["free_bytes"]):
+        print(f"REFUSED: the checkpoints of a full run need ≈ {plan['total_bytes'] / GIB:.1f} GiB but only "
+              f"{plan['free_bytes'] / GIB:.1f} GiB are free in {plan['directory']}. Free space, pass "
+              "--checkpoint-weights-only, a larger --checkpoint-every-fraction or another --checkpoint-dir.")
+        return EXIT_REFUSED
+
     if not torch.cuda.is_available():
         print("error: CUDA is not available to PyTorch (CUDA_VISIBLE_DEVICES hidden or driver problem); nothing was run.")
         return EXIT_REFUSED
@@ -1825,6 +2057,13 @@ def main(argv=None):
     else:
         print(f"GPU temperature before training: {first['temp_c']} °C (stop limit {cli.max_temp} °C)")
     run = Run(output_dir, report, t_start)
+    if plan["enabled"]:
+        t_hash = time.monotonic()
+        shard_files = sorted(glob.glob(str(UPSTREAM_DIR / orig["input_bin"])))
+        report["data"]["shard_sha256"] = {Path(f).name: file_sha256(f) for f in shard_files}
+        run.log(f"hashed {len(shard_files)} train shards in {time.monotonic() - t_hash:.1f} s for the consumed-data records")
+        run.log("\n".join(f"  {name} sha256 {digest}" for name, digest in report["data"]["shard_sha256"].items()),
+                console=False)
     report["status"] = "running"
     stop = StopController()
     stop.install()

@@ -75,10 +75,32 @@ Without `--accept-deviations` the script prints the exact differences and exits.
 - The first step compiles for several minutes; step 0 also runs the original validation pass
   (10.5M tokens) before training starts. ETA appears after `--warmup-steps` (3) steps.
 - `--max-temp 82` stops gracefully above 82 °C. Clocks, power and voltage are never changed.
-- `--save-checkpoint-on-exit` saves model + optimizer state (~4 GB); off by default.
+- Checkpoints are off by default. `--checkpoint-every-fraction 0.1` writes one every 153 steps
+  (steps 0, 153, …, 1530); `--save-checkpoint-on-exit` also checkpoints the last completed step when
+  you stop. See "Checkpoints and consumed data" below.
 - A configuration that ran out of memory is recorded in `oom_failures.json` and refused next time
   (`--retry-failed-config` overrides, e.g. after closing other GPU applications).
 - Run as a plain `python` process, not with `torchrun` (torchrun turns Ctrl+C into SIGTERM).
+
+## Checkpoints and consumed data
+
+The loss is a function of both the parameters and the data, so every checkpoint comes with the exact
+tokens consumed since the previous one. In `checkpoints/<run_id>/` (or `--checkpoint-dir`):
+
+- `ckpt_step{s:06d}.pt` — state after `s` completed optimizer steps: unwrapped model `state_dict`,
+  optimizer and scheduler state (omitted with `--checkpoint-weights-only`), the position (shard file,
+  index, offset) of the next unconsumed micro-batch for a future resume, the effective config, and
+  the sha256 of the pinned file and of the harness.
+- `data_steps{a:06d}-{b:06d}.npz` — every micro-batch of steps `a..b`: `tokens` (uint16,
+  `[n, T+1]`, with `x = tokens[i, :-1]`, `y = tokens[i, 1:]`), `step`, `micro_batch`, `shard_index`,
+  `offset`; the `.json` sidecar lists the shard files with their sha256 (hashed once at startup).
+  Micro-batches of a discarded partial step are not recorded.
+
+Before training, the script estimates the disk space for the full run and refuses to start if the
+checkpoint directory has less free space. At `--checkpoint-every-fraction 0.1` that is 11 × 3.87 GiB
+with optimizer state (11 × 1.40 GiB weights-only) plus 1.50 GiB of data records: ≈ 44.1 GiB
+(≈ 16.9 GiB weights-only). On a network filesystem the quota can be lower than the
+free space shown. Checkpoint time is excluded from step time and added to the wall-clock projection.
 
 ## Outputs (git-ignored)
 
