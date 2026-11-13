@@ -74,7 +74,13 @@ Without `--accept-deviations` the script prints the exact differences and exits.
   wall-clock (training + validation + compilation). `--no-window-calibration` skips the correction.
 - The first step compiles for several minutes; step 0 also runs the original validation pass
   (10.5M tokens) before training starts. ETA appears after `--warmup-steps` (3) steps.
-- `--max-temp 82` stops gracefully above 82 °C. Clocks, power and voltage are never changed.
+- Thermal control: when the GPU reaches `--cool-at` (82 °C), training pauses after the current
+  micro-batch until it has cooled to `--resume-at` (77 °C). Pausing only waits between micro-batches:
+  parameters, gradients, data order and schedules are unchanged, so the trained model is the same.
+  Pause time is excluded from step and validation times, logged, counted in the report, and added to
+  the ETA and wall-clock projection as an extrapolation of the pauses seen so far. Above `--max-temp`
+  (87 °C) or when one pause exceeds `--max-cool-wait` (900 s), the run stops gracefully. Clocks,
+  power and voltage are never changed.
 - Checkpoints are off by default. `--checkpoint-every-fraction 0.1` writes one every 153 steps
   (steps 0, 153, …, 1530); `--save-checkpoint-on-exit` also checkpoints the last completed step when
   you stop. See "Checkpoints and consumed data" below.

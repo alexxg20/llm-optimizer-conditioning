@@ -520,6 +520,69 @@ class StopController:
               flush=True)
 
 
+class ThermalGovernor:
+    """Pause/resume hysteresis between --cool-at and --resume-at, the --max-temp emergency stop and the
+    --max-cool-wait timeout. update() returns "cool", "resume", "stop", "timeout" or None."""
+
+    def __init__(self, cool_at, resume_at, max_temp, max_cool_wait_s):
+        if not resume_at < cool_at < max_temp:
+            raise ValueError("thresholds must satisfy resume_at < cool_at < max_temp")
+        if max_cool_wait_s <= 0:
+            raise ValueError("max_cool_wait_s must be > 0")
+        self.cool_at, self.resume_at, self.max_temp, self.max_cool_wait_s = cool_at, resume_at, max_temp, max_cool_wait_s
+        self.cooling = False
+        self.cooling_since = None
+        self.detail = ""
+
+    def update(self, temp_c, now):
+        if temp_c is not None and temp_c > self.max_temp:
+            self.detail = f"GPU temperature {temp_c} °C exceeded the --max-temp emergency limit {self.max_temp:g} °C"
+            return "stop"
+        if temp_c is not None and not self.cooling and temp_c >= self.cool_at:
+            self.cooling, self.cooling_since = True, now
+            return "cool"
+        if temp_c is not None and self.cooling and temp_c <= self.resume_at:
+            self.cooling, self.cooling_since = False, None
+            return "resume"
+        # Also checked on failed reads, so a cooling pause cannot outlive the timeout when telemetry breaks.
+        if self.cooling and now - self.cooling_since > self.max_cool_wait_s:
+            self.detail = (f"GPU did not cool from >= {self.cool_at:g} °C to <= {self.resume_at:g} °C within "
+                           f"--max-cool-wait {self.max_cool_wait_s:g} s (last reading {temp_c} °C)")
+            return "timeout"
+        return None
+
+
+def wait_for_cooling(cooling, abort, current_temp, cool_at, resume_at, log, sync=None, poll_s=0.5):
+    """Blocks between micro-batches while `cooling` is set. Returns None if no pause was needed, else the pause
+    as a dict with its duration in seconds."""
+    if not cooling.is_set() or abort():
+        return None
+    if sync is not None:
+        # Queued GPU work belongs to the preceding micro-batch, not to the pause.
+        sync()
+    t0 = time.monotonic()
+    start_temp = current_temp()
+    log(f"cooling pause: GPU {start_temp} °C >= {cool_at:g} °C, waiting for <= {resume_at:g} °C ...")
+    while cooling.is_set() and not abort():
+        time.sleep(poll_s)
+    t1 = time.monotonic()
+    end_temp = current_temp()
+    aborted = cooling.is_set()
+    log(f"cooling pause ended by a stop after {t1 - t0:.0f} s at {end_temp} °C" if aborted
+        else f"resumed after {t1 - t0:.0f} s at {end_temp} °C")
+    return {"seconds": t1 - t0, "start_temp_c": start_temp, "end_temp_c": end_temp, "ended_by_stop": aborted,
+            "t0": t0, "t1": t1}
+
+
+def cooling_stats(steps, evals, pauses):
+    """Cooling pauses relative to the GPU work done meanwhile (timed steps and validations, pauses excluded)."""
+    pause_s = sum(p["seconds"] for p in pauses)
+    active_s = sum(s["step_time_s"] for s in steps if not s.get("warmup")) + sum(e["duration_s"] for e in evals)
+    return {"pauses": len(pauses), "pause_total_s": pause_s, "active_s": active_s,
+            "pause_fraction_of_wall_clock": pause_s / (pause_s + active_s) if pause_s + active_s > 0 else None,
+            "pause_per_compute_s": pause_s / active_s if active_s > 0 else None}
+
+
 THROTTLE_REASONS = {"power_cap": 0x4, "hw_slowdown": 0x8, "sw_thermal": 0x20, "hw_thermal": 0x40, "hw_power_brake": 0x80}
 
 
@@ -544,6 +607,11 @@ class GpuTelemetry:
         self._halt = threading.Event()
         self._thread = None
         self.max_temp_seen = None
+        self.governor = None
+        self.cooling = threading.Event()
+        # Set on the emergency stop or a cooling timeout even when another stop reason already won, so the
+        # post-stop window calibration can still abort.
+        self.emergency = threading.Event()
 
     def _call(self, name, *args):
         try:
@@ -641,13 +709,18 @@ class GpuTelemetry:
             self.max_temp_seen = max(self.max_temp_seen or s["temp_c"], s["temp_c"])
         return s
 
-    def start(self, interval_s, max_temp_c, stop):
+    def latest_temp(self):
+        with self._lock:
+            return next((s["temp_c"] for s in reversed(self._samples) if s["temp_c"] is not None), None)
+
+    def start(self, interval_s, governor, stop):
         if self.backend is None:
-            print("warning: GPU temperature monitoring unavailable (no NVML / nvidia-smi); thermal stop disabled.")
+            print("warning: GPU temperature monitoring unavailable (no NVML / nvidia-smi); thermal pause and stop disabled.")
             return
+        self.governor = governor
 
         def loop():
-            near_warned = failure_warned = False
+            stop_warned = failure_warned = False
             failures = 0
             while True:
                 s = self.sample()
@@ -657,20 +730,26 @@ class GpuTelemetry:
                 if temp is None:
                     failures += 1
                     if failures >= 5 and not failure_warned:
-                        print("\nWARNING: 5 consecutive GPU temperature reads failed; the thermal stop cannot "
+                        print("\nWARNING: 5 consecutive GPU temperature reads failed; the thermal pause and stop cannot "
                               "trigger until reads recover. Watch the temperature yourself or press Ctrl+C.", flush=True)
                         failure_warned = True
                 else:
                     failures = 0
-                    if temp > max_temp_c:
-                        if stop.request("thermal", f"GPU temperature {temp} °C exceeded --max-temp {max_temp_c} °C"):
-                            print(f"\nWARNING: GPU temperature {temp} °C > limit {max_temp_c} °C: stopping after the "
-                                  "current micro-batch.", flush=True)
-                    elif temp >= max_temp_c - 5 and not near_warned:
-                        print(f"\nwarning: GPU at {temp} °C, within 5 °C of the {max_temp_c} °C stop limit.", flush=True)
-                        near_warned = True
-                    elif temp < max_temp_c - 8:
-                        near_warned = False
+                    if temp >= governor.max_temp - 3 and not stop_warned:
+                        print(f"\nwarning: GPU at {temp} °C, within 3 °C of the {governor.max_temp:g} °C emergency stop.",
+                              flush=True)
+                        stop_warned = True
+                    elif temp < governor.cool_at:
+                        stop_warned = False
+                action = governor.update(temp, s["t"])
+                if action == "cool":
+                    self.cooling.set()
+                elif action == "resume":
+                    self.cooling.clear()
+                elif action in ("stop", "timeout"):
+                    self.emergency.set()
+                    if stop.request("thermal", governor.detail):
+                        print(f"\nWARNING: {governor.detail}: stopping after the current micro-batch.", flush=True)
                 if self._halt.wait(interval_s):
                     return
 
@@ -682,9 +761,9 @@ class GpuTelemetry:
         if self._thread is not None:
             self._thread.join(timeout=15)
 
-    def window(self, t0, t1):
+    def window(self, t0, t1, exclude=()):
         with self._lock:
-            ss = [s for s in self._samples if t0 <= s["t"] <= t1]
+            ss = [s for s in self._samples if t0 <= s["t"] <= t1 and not any(a <= s["t"] <= b for a, b in exclude)]
             if not ss and self._samples:
                 ss = [self._samples[-1]]
 
@@ -1033,7 +1112,7 @@ def steady_eval_seconds(e):
 
 
 def project_wall_clock(training_s, summary, steps, evals, setup_time_s, warmup_steps, n_evals,
-                       checkpoint_s_each=None, n_checkpoints=0):
+                       checkpoint_s_each=None, n_checkpoints=0, cooling_per_compute_s=None):
     if "throughput_mean_tok_s" not in summary:
         return None
     warm = steps[:warmup_steps]
@@ -1041,8 +1120,10 @@ def project_wall_clock(training_s, summary, steps, evals, setup_time_s, warmup_s
     steady = [steady_eval_seconds(e) for e in evals]
     eval_s = statistics.median(steady) if steady else None
     eval_compile_excess = max(evals[0]["duration_s"] - steady[0], 0.0) if evals else 0.0
+    # Cooling time is extrapolated from the pause-to-work ratio seen so far, applied to the run's GPU work.
+    cooling_s = (cooling_per_compute_s or 0.0) * (training_s + (eval_s or 0.0) * n_evals)
     total = (training_s + (setup_time_s or 0.0) + compile_overhead + (eval_s or 0.0) * n_evals + eval_compile_excess
-             + (checkpoint_s_each or 0.0) * n_checkpoints)
+             + (checkpoint_s_each or 0.0) * n_checkpoints + cooling_s)
     return {
         "total_s": total,
         "training_s": training_s,
@@ -1054,6 +1135,8 @@ def project_wall_clock(training_s, summary, steps, evals, setup_time_s, warmup_s
         "validation_not_measured": eval_s is None,
         "checkpoint_seconds_each": checkpoint_s_each,
         "checkpoints_in_full_run": n_checkpoints,
+        "cooling_s": cooling_s,
+        "cooling_per_compute_s": cooling_per_compute_s,
     }
 
 
@@ -1125,6 +1208,16 @@ def uncertainty_notes(report):
         notes.append("Clock-limiting reasons reported by the GPU, share of telemetry samples: thermal slowdown "
                      f"{_f(statistics.fmean(therm) if therm else None, '.0f', '%')}, power cap "
                      f"{_f(statistics.fmean(power) if power else None, '.0f', '%')}.")
+    cool = report.get("cooling") or {}
+    if cool.get("pauses"):
+        notes.append(f"{cool['pauses']} cooling pause(s) so far, {cool['pause_total_s'] / 60:.1f} min in total "
+                     f"({_f(None if cool['pause_fraction_of_wall_clock'] is None else 100 * cool['pause_fraction_of_wall_clock'], '.1f', '%')} "
+                     "of training + validation wall clock). The projection adds "
+                     f"{_f(cool['pause_per_compute_s'], '.2f')} s of cooling per second of GPU work; this extrapolates the "
+                     "heat balance seen so far, and a longer heat-soak can raise it.")
+    elif cool.get("cool_at_c") is not None and steps:
+        notes.append(f"No cooling pause so far (pause at >= {cool['cool_at_c']:g} °C), so the projection adds no cooling "
+                     "time; it is low if the GPU reaches that temperature later in the run.")
     env = report.get("environment") or {}
     if env.get("on_ac_power") is False:
         notes.append("The laptop was on battery power; GPU power limits are usually lower on battery.")
@@ -1192,6 +1285,10 @@ def finalize(report):
     report["summary"] = summarize(meas["steps"], cfg["warmup_steps"], cfg["ma_window"], cfg["target_tokens"],
                                   report["model"]["flops_per_token_matmul"])
     s = report["summary"]
+    report["cooling"] = {"cool_at_c": cfg.get("cool_at_c"), "resume_at_c": cfg.get("resume_at_c"),
+                         "max_temp_c": cfg.get("max_temp_c"), "max_cool_wait_s": cfg.get("max_cool_wait_s"),
+                         **cooling_stats(meas["steps"], meas["evals"], meas.get("cooling_pauses") or [])}
+    ratio = report["cooling"]["pause_per_compute_s"]
     est = {"target_tokens": cfg["target_tokens"], "tokens_done": s["tokens_done"],
            "remaining_tokens": max(cfg["target_tokens"] - s["tokens_done"], 0)}
     if "throughput_ma_tok_s" in s:
@@ -1209,14 +1306,16 @@ def finalize(report):
         ckpt_each = statistics.median(later) if later else (statistics.median(c["seconds"] for c in written) if written else None)
         wall = project_wall_clock(training, s, meas["steps"], meas["evals"], meas.get("setup_time_s"),
                                   cfg["warmup_steps"], n_evals_full_run(cfg["num_iterations"], cfg["val_loss_every"]),
-                                  ckpt_each, len(plan.get("steps") or []))
+                                  ckpt_each, len(plan.get("steps") or []), ratio)
+        eta = corr["remaining_s"] if corr else s["eta_remaining_s"]
         est.update({
             "throughput_tok_s": s["throughput_ma_tok_s"],
             "window_correction_applied": corr is not None,
             "window_correction": corr,
             "total_training_s": training,
             "total_steady_state_s": s["total_steady_state_s"],
-            "eta_remaining_s": corr["remaining_s"] if corr else s["eta_remaining_s"],
+            "eta_remaining_s": eta,
+            "eta_remaining_incl_cooling_s": eta * (1 + (ratio or 0.0)),
             "eta_remaining_uncorrected_s": s["eta_remaining_s"],
             "total_steady_state_cumulative_s": s["total_steady_state_cumulative_s"] + delta,
             "total_ci95_s": shift(s["total_ci95_s"]),
@@ -1350,6 +1449,7 @@ def render_markdown(report):
         clocks = [r["sm_clock_mean_mhz"] for r in meas["steps"][s["warmup_steps_excluded"]:] if r.get("sm_clock_mean_mhz") is not None]
         L += [f"| GPU utilisation (timed steps, mean) | {_f(statistics.fmean(utils) if utils else None, '.0f', '%')} |",
               f"| GPU temperature max | {_f(max(temps) if temps else None, '.0f', ' °C')} |",
+              *thermal_rows(report),
               f"| GPU power / SM clock (timed steps, mean) | {_f(statistics.fmean(powers) if powers else None, '.0f', ' W')} / "
               f"{_f(statistics.fmean(clocks) if clocks else None, '.0f', ' MHz')} |"]
         for e in meas["evals"]:
@@ -1391,6 +1491,8 @@ def render_markdown(report):
               f"{_f(wc.get('compile_warmup_overhead_s'), '.0f', ' s')} + setup {_f(wc.get('setup_s'), '.0f', ' s')}"
               + (f" + {wc['checkpoints_in_full_run']} checkpoints ({_f(wc.get('checkpoint_seconds_each'), '.0f', ' s')} each)"
                  if wc.get("checkpoints_in_full_run") else "")
+              + (f" + cooling pauses {_f(wc['cooling_s'], '.0f', ' s')} (extrapolated, "
+                 f"{wc['cooling_per_compute_s']:.2f} s per second of GPU work)" if wc.get("cooling_s") else "")
               + f". Measured with {config_label(c)}.",
               training_line,
               f"- Training only, uncorrected (basis of the live ETA; throughput of the last {s['ma_window']} timed steps): "
@@ -1443,6 +1545,18 @@ def render_markdown(report):
           "- Sustained multi-hour full load on a laptop is thermally and mechanically stressful and blocks the machine "
           "for other work; cluster nodes are built for continuous load and can be scheduled unattended.", ""]
     return "\n".join(L)
+
+
+def thermal_rows(report):
+    cool = report.get("cooling") or {}
+    if cool.get("cool_at_c") is None:
+        return []
+    frac = cool.get("pause_fraction_of_wall_clock")
+    return [f"| Thermal control | pause at ≥ {cool['cool_at_c']:g} °C until ≤ {cool['resume_at_c']:g} °C (at most "
+            f"{cool['max_cool_wait_s']:g} s per pause); emergency stop above {cool['max_temp_c']:g} °C |",
+            f"| Cooling pauses (excluded from step and validation times) | {cool['pauses']}, "
+            f"{cool['pause_total_s'] / 60:.1f} min in total"
+            + (f" ({100 * frac:.1f}% of training + validation wall clock)" if frac is not None else "") + " |"]
 
 
 def cfg_tokens(c):
@@ -1509,36 +1623,43 @@ class Run:
 # ----------------------------------------------------------------------------- training
 
 
-def format_live(rec, s, num_iterations, warmup_steps, target_tokens):
+def format_live(rec, s, num_iterations, warmup_steps, target_tokens, cooling=None):
+    ratio = (cooling or {}).get("pause_per_compute_s") or 0.0
     head = (f"step {rec['step']:>4}/{num_iterations} ({100 * rec['step'] / num_iterations:4.1f}%) | "
             f"loss {rec['train_loss']:.4f} | step {rec['step_time_s']:.2f} s")
     if s.get("timed_steps"):
         head += (f" | avg({s['ma_window']}) {s['step_time_ma_s']:.2f} s | {s['throughput_ma_tok_s']:,.0f} tok/s"
                  f" | ~{s.get('approx_tflops_matmul', 0):.1f} TFLOPS")
-        eta = f"ETA {fmt_duration(s['eta_remaining_s'])} | total {fmt_duration(s['total_steady_state_s'])}"
+        eta = (f"ETA {fmt_duration(s['eta_remaining_s'] * (1 + ratio))} | total "
+               f"{fmt_duration(s['total_steady_state_s'] * (1 + ratio))}")
     else:
         head += f" | warming up {s['completed_steps']}/{warmup_steps} | {rec['tokens_per_s']:,.0f} tok/s"
         if rec["step"] >= 2:
             remaining = max(target_tokens - s["tokens_done"], 0)
-            eta = (f"ETA ~{fmt_duration(remaining / rec['tokens_per_s'])} | total "
-                   f"~{fmt_duration(target_tokens / rec['tokens_per_s'])} (provisional)")
+            eta = (f"ETA ~{fmt_duration(remaining / rec['tokens_per_s'] * (1 + ratio))} | total "
+                   f"~{fmt_duration(target_tokens / rec['tokens_per_s'] * (1 + ratio))} (provisional)")
         else:
             eta = "ETA n/a (compilation step)"
     gpu = (f"GPU {_f(rec.get('gpu_util_mean_pct'), '.0f', '%')} {_f(rec.get('temp_max_c'), '.0f', ' °C')} "
            f"{_f(rec.get('power_mean_w'), '.0f', ' W')} {_f(rec.get('sm_clock_mean_mhz'), '.0f', ' MHz')}")
     mem = (f"mem {rec['mem_allocated_gib']:.2f} GiB alloc, {rec['mem_peak_allocated_gib']:.2f} peak, "
            f"{rec['mem_reserved_gib']:.2f} reserved")
+    if cooling and cooling.get("pauses"):
+        eta += f" incl. cooling | {cooling['pauses']} pause(s), {cooling['pause_total_s'] / 60:.1f} min"
     return f"{head}\n    {mem} | {gpu} | {eta}"
 
 
-def calibrate_windows(model, train_loader, x, y, windows, use_ddp, k=CALIBRATION_MICRO_BATCHES):
-    """Median seconds per real-data forward+backward micro-batch at each attention window; no optimizer step."""
+def calibrate_windows(model, train_loader, x, y, windows, use_ddp, k=CALIBRATION_MICRO_BATCHES, before_sample=None):
+    """Median seconds per real-data forward+backward micro-batch at each attention window; no optimizer step.
+    `before_sample` runs outside the timed region (cooling pauses)."""
     points = []
     with (model.no_sync() if use_ddp else contextlib.nullcontext()):
         for w in windows:
             attn_blocksize = torch.tensor(w, dtype=torch.int, device='cuda')
             samples = []
             for _ in range(k):
+                if before_sample is not None:
+                    before_sample()
                 torch.cuda.synchronize()
                 t = time.monotonic()
                 loss = model(x, y, attn_blocksize=attn_blocksize)
@@ -1570,6 +1691,24 @@ def train(up, cfg, run, telemetry, stop, registry_path, gpu):
     val_steps, train_accumulation_steps = cfg["val_steps"], cfg["train_accumulation_steps"]
     val_loss_every = cfg["val_loss_every"]
     where = {"phase": "setup", "step": 0, "micro_batch": 0}
+    pauses = meas.setdefault("cooling_pauses", [])
+    pause_spans = []
+
+    def cool_down(phase, step, micro_batch, abort=lambda: stop.requested, record=True):
+        # Waiting between micro-batches leaves parameters, gradients, data order and schedules untouched.
+        p = wait_for_cooling(telemetry.cooling, abort, telemetry.latest_temp, cfg["cool_at_c"], cfg["resume_at_c"],
+                             run.log, torch.cuda.synchronize)
+        if p is None:
+            return 0.0
+        pause_spans.append((p.pop("t0"), p.pop("t1")))
+        if record:
+            pauses.append({"phase": phase, "step": step, "micro_batch": micro_batch, **p})
+        return p["seconds"]
+
+    def calibration_pause():
+        cool_down("calibration", len(steps), None, abort=telemetry.emergency.is_set, record=False)
+        if telemetry.emergency.is_set():
+            raise RuntimeError(f"thermal emergency: {telemetry.governor.detail if telemetry.governor else ''}")
 
     for k, v in (("RANK", "0"), ("LOCAL_RANK", "0"), ("WORLD_SIZE", "1"), ("MASTER_ADDR", "127.0.0.1"), ("MASTER_PORT", str(free_port()))):
         os.environ.setdefault(k, v)
@@ -1653,7 +1792,9 @@ def train(up, cfg, run, telemetry, stop, registry_path, gpu):
                 val_loader.reset()
                 val_loss = 0.0
                 first_mb_s = None
+                eval_pause = 0.0
                 for _ in range(val_steps):
+                    eval_pause += cool_down("validation", step, None)
                     if stop.requested:
                         break
                     with torch.no_grad():
@@ -1661,16 +1802,16 @@ def train(up, cfg, run, telemetry, stop, registry_path, gpu):
                         val_loss += model(x_val, y_val, attn_blocksize=attn_blocksize)
                     if first_mb_s is None:
                         torch.cuda.synchronize()
-                        first_mb_s = time.monotonic() - t_eval
+                        first_mb_s = time.monotonic() - t_eval - eval_pause
                 if stop.requested:
                     run.log("validation interrupted; it is not recorded")
                     break
                 dist.all_reduce(val_loss, op=dist.ReduceOp.AVG)
                 val_loss /= val_steps
                 torch.cuda.synchronize()
-                eval_s = time.monotonic() - t_eval
+                eval_s = time.monotonic() - t_eval - eval_pause
                 evals.append({"step": step, "val_loss": val_loss.item(), "duration_s": eval_s, "first_microbatch_s": first_mb_s,
-                              "val_steps": val_steps, "includes_compile": first_eval})
+                              "val_steps": val_steps, "includes_compile": first_eval, "pause_s": eval_pause})
                 timed = max(len(steps) - W, 0)
                 run.log(f'step:{step}/{args.num_iterations} val_loss:{val_loss.item():.4f} train_time:{1000 * train_time_s:.0f}ms '
                         f'step_avg:{1000 * train_time_s / timed if timed else float("nan"):.2f}ms (validation took {eval_s:.1f} s)')
@@ -1692,7 +1833,9 @@ def train(up, cfg, run, telemetry, stop, registry_path, gpu):
             t0 = time.monotonic()
             shard_before = train_loader.current_shard
             completed = True
+            step_pause = 0.0
             for i in range(1, train_accumulation_steps+1):
+                step_pause += cool_down("training", step + 1, i)
                 if stop.requested:
                     completed = False
                     break
@@ -1723,15 +1866,15 @@ def train(up, cfg, run, telemetry, stop, registry_path, gpu):
             t1 = time.monotonic()
             train_loader.commit_step()
 
-            step_time = t1 - t0
+            step_time = t1 - t0 - step_pause
             tokens = train_accumulation_steps * T * ddp_world_size
             rec = {"step": step + 1, "train_loss": train_loss.item(), "step_time_s": step_time, "tokens": tokens,
                    "tokens_per_s": tokens / step_time, "warmup": len(steps) < W, "attn_blocksize": int(attn_blocksize),
                    "mem_allocated_gib": torch.cuda.memory_allocated() / GIB,
                    "mem_peak_allocated_gib": torch.cuda.max_memory_allocated() / GIB,
                    "mem_peak_since": "start" if len(steps) <= W else "end of warm-up",
-                   "mem_reserved_gib": torch.cuda.memory_reserved() / GIB,
-                   **telemetry.window(t0, t1)}
+                   "mem_reserved_gib": torch.cuda.memory_reserved() / GIB, "pause_s": step_pause,
+                   **telemetry.window(t0, t1, [sp for sp in pause_spans if sp[1] >= t0])}
             steps.append(rec)
             meas["peak_allocated_gib"] = max(meas["peak_allocated_gib"] or 0.0, rec["mem_peak_allocated_gib"])
             meas["peak_reserved_gib"] = max(meas["peak_reserved_gib"] or 0.0, torch.cuda.max_memory_reserved() / GIB)
@@ -1745,7 +1888,8 @@ def train(up, cfg, run, telemetry, stop, registry_path, gpu):
                 meas["data_wrapped_at_step"] = step + 1
                 run.log(f"note: the training data wrapped around to the first shard during step {step + 1}")
             s = summarize(steps, W, cfg["ma_window"], cfg["target_tokens"], report["model"]["flops_per_token_matmul"])
-            print(format_live(rec, s, args.num_iterations, W, cfg["target_tokens"]), flush=True)
+            print(format_live(rec, s, args.num_iterations, W, cfg["target_tokens"], cooling_stats(steps, evals, pauses)),
+                  flush=True)
             timed = max(len(steps) - W, 0)
             run.log(f"step:{step+1}/{args.num_iterations} train_loss:{train_loss.item():.4f} train_time:{1000 * train_time_s:.0f}ms "
                     f"step_avg:{1000 * train_time_s / timed if timed else float('nan'):.2f}ms", console=False)
@@ -1765,7 +1909,8 @@ def train(up, cfg, run, telemetry, stop, registry_path, gpu):
                 try:
                     # A stop during validation leaves eval mode, which would select a different compiled graph.
                     model.train()
-                    points = calibrate_windows(model, train_loader, x, y, windows, cfg["use_ddp"])
+                    points = calibrate_windows(model, train_loader, x, y, windows, cfg["use_ddp"],
+                                               before_sample=calibration_pause)
                     report["window_calibration"] = {"status": "done", "w_measured": w_measured, "points": points,
                                                     "micro_batches_per_window": CALIBRATION_MICRO_BATCHES,
                                                     "method": CALIBRATION_METHOD}
@@ -1854,7 +1999,13 @@ def parse_args(argv=None):
     p.add_argument("--no-ddp", action="store_true", help="skip the DDP wrapper (identity at world_size=1). A deviation")
     p.add_argument("--val-loss-every", type=int, default=None, help="validation frequency (original: 125). A deviation")
     p.add_argument("--accept-deviations", action="store_true", help="confirm the listed changes from the pinned config")
-    p.add_argument("--max-temp", type=float, default=82.0, help="stop gracefully above this GPU temperature in °C (82)")
+    p.add_argument("--cool-at", type=float, default=82.0,
+                   help="pause training between micro-batches when the GPU reaches this temperature in °C (82)")
+    p.add_argument("--resume-at", type=float, default=77.0, help="resume once the GPU has cooled to this temperature in °C (77)")
+    p.add_argument("--max-temp", type=float, default=87.0,
+                   help="emergency stop: stop gracefully above this GPU temperature in °C (87)")
+    p.add_argument("--max-cool-wait", type=float, default=900.0,
+                   help="stop gracefully if one cooling pause does not reach --resume-at within this many seconds (900)")
     p.add_argument("--temp-poll-interval", type=float, default=2.0, help="seconds between telemetry samples (2)")
     p.add_argument("--warmup-steps", type=int, default=3, help="optimizer steps excluded from throughput (compilation; 3)")
     p.add_argument("--ma-window", type=int, default=10, help="moving-average window in optimizer steps (10)")
@@ -1873,6 +2024,10 @@ def parse_args(argv=None):
         p.error("--warmup-steps must be >= 1 (the first step includes compilation)")
     if a.ma_window < 1 or a.temp_poll_interval <= 0:
         p.error("--ma-window must be >= 1 and --temp-poll-interval > 0")
+    if not a.resume_at < a.cool_at < a.max_temp:
+        p.error("temperatures must satisfy --resume-at < --cool-at < --max-temp")
+    if a.max_cool_wait <= 0:
+        p.error("--max-cool-wait must be > 0")
     try:
         checkpoint_steps(1530, a.checkpoint_every_fraction)
     except ValueError as e:
@@ -1901,7 +2056,8 @@ def new_report(run_id, orig, cfg, deviations, mm, gpu, env, preflight):
         "preflight": preflight,
         "data": None,
         "measurements": {"steps": [], "evals": [], "setup_time_s": None, "peak_allocated_gib": None,
-                         "steady_peak_allocated_gib": None, "peak_reserved_gib": None, "data_wrapped_at_step": None},
+                         "steady_peak_allocated_gib": None, "peak_reserved_gib": None, "data_wrapped_at_step": None,
+                         "cooling_pauses": []},
         "window_calibration": ({"status": "not-run", "reason": "training has not stopped via Ctrl+C/SIGTERM"}
                                if cfg.get("window_calibration", True) else
                                {"status": "disabled", "reason": "--no-window-calibration"}),
@@ -1929,7 +2085,11 @@ def print_exit_summary(report, paths, kept_root=None):
         print("  window correction: " + (CALIBRATION_METHOD if est["window_correction_applied"]
                                          else f"{calib.get('status')} ({calib.get('reason')})"))
         wc = est.get("wall_clock") or {}
-        print(f"PROJECTED WALL-CLOCK FOR ONE COMPLETE RUN (training + validation + compile): {fmt_duration(wc.get('total_s'))}")
+        print(f"PROJECTED WALL-CLOCK FOR ONE COMPLETE RUN (training + validation + compile + cooling): {fmt_duration(wc.get('total_s'))}")
+        cool = report.get("cooling") or {}
+        if cool.get("pauses"):
+            print(f"  cooling: {cool['pauses']} pause(s), {cool['pause_total_s'] / 60:.1f} min so far; projected "
+                  f"{fmt_duration(wc.get('cooling_s'))} for the full run (extrapolated from the heat balance so far)")
         print(f"feasibility verdict: {report['feasibility']['verdict']}")
         for n in report["uncertainty_notes"]:
             print(f"  - {n}")
@@ -1952,7 +2112,8 @@ def main(argv=None):
     except ValueError as e:
         print(f"error: {e}")
         return EXIT_REFUSED
-    cfg.update(warmup_steps=cli.warmup_steps, ma_window=cli.ma_window, max_temp_c=cli.max_temp,
+    cfg.update(warmup_steps=cli.warmup_steps, ma_window=cli.ma_window, max_temp_c=cli.max_temp, cool_at_c=cli.cool_at,
+               resume_at_c=cli.resume_at, max_cool_wait_s=cli.max_cool_wait,
                temp_poll_interval_s=cli.temp_poll_interval, save_checkpoint_on_exit=cli.save_checkpoint_on_exit,
                window_calibration=not cli.no_window_calibration, deviations_accepted=cli.accept_deviations,
                checkpoint_every_fraction=cli.checkpoint_every_fraction, checkpoint_weights_only=cli.checkpoint_weights_only)
@@ -2051,11 +2212,12 @@ def main(argv=None):
     first = telemetry.sample()
     report["environment"]["thermal_stop_available"] = first["temp_c"] is not None
     if first["temp_c"] is None:
-        print("!" * 100 + "\nWARNING: the GPU temperature cannot be read, so the --max-temp thermal stop is UNAVAILABLE "
+        print("!" * 100 + "\nWARNING: the GPU temperature cannot be read, so the thermal pause and stop are UNAVAILABLE "
               "for this run.\nWatch the temperature yourself (e.g. `watch -n 2 nvidia-smi`) and press Ctrl+C to stop.\n"
               + "!" * 100)
     else:
-        print(f"GPU temperature before training: {first['temp_c']} °C (stop limit {cli.max_temp} °C)")
+        print(f"GPU temperature before training: {first['temp_c']} °C (pauses at >= {cli.cool_at:g} °C until "
+              f"<= {cli.resume_at:g} °C; emergency stop above {cli.max_temp:g} °C)")
     run = Run(output_dir, report, t_start)
     if plan["enabled"]:
         t_hash = time.monotonic()
@@ -2067,7 +2229,7 @@ def main(argv=None):
     report["status"] = "running"
     stop = StopController()
     stop.install()
-    telemetry.start(cli.temp_poll_interval, cli.max_temp, stop)
+    telemetry.start(cli.temp_poll_interval, ThermalGovernor(cli.cool_at, cli.resume_at, cli.max_temp, cli.max_cool_wait), stop)
     code = EXIT_ERROR
     try:
         code = train(up, cfg, run, telemetry, stop, registry_path, gpu)

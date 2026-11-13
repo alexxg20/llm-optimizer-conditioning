@@ -11,7 +11,10 @@ import statistics
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import unittest
+from unittest import mock
 from pathlib import Path
 
 import numpy as np
@@ -353,6 +356,154 @@ class SafetyTests(unittest.TestCase):
         self.assertTrue(stop.request("thermal", "hot"))
         self.assertFalse(stop.request("user-interrupt"))
         self.assertEqual(stop.reason, "thermal")
+
+
+class ThermalTests(unittest.TestCase):
+    def governor(self):
+        return tf.ThermalGovernor(82.0, 77.0, 87.0, 900.0)
+
+    def test_hysteresis(self):
+        g = self.governor()
+        seq = [(80, None), (82, "cool"), (85, None), (78, None), (77, "resume"), (81, None), (82, "cool")]
+        for t, (temp, expected) in enumerate(seq):
+            self.assertEqual(g.update(temp, float(t)), expected, f"temp {temp}")
+        self.assertTrue(g.cooling)
+
+    def test_emergency_stop_is_strictly_above_max_temp_and_overrides_cooling(self):
+        g = self.governor()
+        self.assertEqual(g.update(87, 0.0), "cool")
+        self.assertIsNone(g.update(87, 1.0))
+        self.assertEqual(g.update(88, 2.0), "stop")
+        self.assertIn("--max-temp emergency limit 87", g.detail)
+
+    def test_cooling_timeout(self):
+        g = self.governor()
+        g.update(83, 0.0)
+        self.assertIsNone(g.update(80, 900.0))
+        self.assertEqual(g.update(80, 901.0), "timeout")
+        self.assertIn("--max-cool-wait 900", g.detail)
+
+    def test_failed_reads_are_ignored_but_cannot_extend_a_pause(self):
+        g = self.governor()
+        self.assertIsNone(g.update(None, 0.0))
+        self.assertFalse(g.cooling)
+        g.update(83, 10.0)
+        self.assertIsNone(g.update(None, 500.0))
+        self.assertTrue(g.cooling)
+        self.assertEqual(g.update(None, 911.0), "timeout")
+
+    def test_invalid_thresholds(self):
+        for args in [(77.0, 82.0, 87.0, 900.0), (82.0, 77.0, 80.0, 900.0), (82.0, 77.0, 87.0, 0.0)]:
+            with self.assertRaises(ValueError):
+                tf.ThermalGovernor(*args)
+
+    def test_cli_defaults_and_validation(self):
+        a = tf.parse_args([])
+        self.assertEqual((a.cool_at, a.resume_at, a.max_temp, a.max_cool_wait), (82.0, 77.0, 87.0, 900.0))
+        for bad in (["--resume-at", "83"], ["--max-temp", "80"], ["--max-cool-wait", "0"]):
+            with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                tf.parse_args(bad)
+
+    def test_wait_for_cooling(self):
+        cooling, logs, syncs = threading.Event(), [], []
+        args = (lambda: False, lambda: 83, 82.0, 77.0, logs.append, lambda: syncs.append(1))
+        self.assertIsNone(tf.wait_for_cooling(cooling, *args, poll_s=0.01))
+        self.assertEqual((logs, syncs), ([], []))
+        cooling.set()
+        threading.Timer(0.2, cooling.clear).start()
+        p = tf.wait_for_cooling(cooling, *args, poll_s=0.01)
+        self.assertGreaterEqual(p["seconds"], 0.15)
+        self.assertFalse(p["ended_by_stop"])
+        self.assertEqual(syncs, [1])
+        self.assertEqual(logs[0], "cooling pause: GPU 83 °C >= 82 °C, waiting for <= 77 °C ...")
+        self.assertTrue(logs[1].startswith("resumed after"))
+
+    def test_wait_for_cooling_ends_on_stop(self):
+        cooling, stopped = threading.Event(), threading.Event()
+        cooling.set()
+        threading.Timer(0.1, stopped.set).start()
+        p = tf.wait_for_cooling(cooling, stopped.is_set, lambda: 84, 82.0, 77.0, lambda s: None, poll_s=0.01)
+        self.assertTrue(p["ended_by_stop"])
+        self.assertIsNone(tf.wait_for_cooling(cooling, stopped.is_set, lambda: 84, 82.0, 77.0, lambda s: None))
+
+    def test_telemetry_thread_drives_events_and_stop(self):
+        temps = iter([80, 82, 79, 76, 88] + [88] * 100)
+        with mock.patch.dict(sys.modules, {"pynvml": None}):
+            tel = tf.GpuTelemetry()
+        tel.backend = "fake"
+        tel.sample = lambda: {"t": time.monotonic(), "temp_c": next(temps), "util_pct": None,
+                              "power_w": None, "sm_clock_mhz": None, "throttle": []}
+        stop, seen = tf.StopController(), []
+        orig_update = tf.ThermalGovernor.update
+
+        class Recording(tf.ThermalGovernor):
+            def update(self, temp_c, now):
+                action = orig_update(self, temp_c, now)
+                seen.append((temp_c, action, tel.cooling.is_set()))
+                return action
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            tel.start(0.01, Recording(82.0, 77.0, 87.0, 900.0), stop)
+            deadline = time.monotonic() + 5
+            while not stop.requested and time.monotonic() < deadline:
+                time.sleep(0.01)
+            tel.stop()
+        self.assertEqual([a for _, a, _ in seen[:5]], [None, "cool", None, "resume", "stop"])
+        self.assertEqual(stop.reason, "thermal")
+        self.assertTrue(tel.emergency.is_set())
+        self.assertFalse(tel.cooling.is_set())
+
+    def test_cooling_stats_exclude_warmup_steps(self):
+        steps = [fake_step(1, 300.0), fake_step(2, 20.0), fake_step(3, 20.0)] + [fake_step(i, 20.0) for i in range(4, 14)]
+        c = tf.cooling_stats(steps, [fake_eval(0, 100.0, 50.0)], [{"seconds": 30.0}, {"seconds": 30.0}])
+        self.assertEqual(c["pauses"], 2)
+        self.assertAlmostEqual(c["active_s"], 10 * 20.0 + 100.0)
+        self.assertAlmostEqual(c["pause_per_compute_s"], 60.0 / 300.0)
+        self.assertAlmostEqual(c["pause_fraction_of_wall_clock"], 60.0 / 360.0)
+        self.assertIsNone(tf.cooling_stats([], [], [])["pause_per_compute_s"])
+
+    def test_projection_includes_cooling(self):
+        steps = [fake_step(i, 20.0) for i in range(1, 10)]
+        s = tf.summarize(steps, 3, 10, ORIG["target_tokens"])
+        evals = [fake_eval(0, 400.0, 300.0)]
+        base = tf.project_wall_clock(30600.0, s, steps, evals, 30.0, 3, 14)
+        cooled = tf.project_wall_clock(30600.0, s, steps, evals, 30.0, 3, 14, cooling_per_compute_s=0.1)
+        self.assertEqual(base["cooling_s"], 0.0)
+        self.assertAlmostEqual(cooled["cooling_s"], 0.1 * (30600.0 + 14 * base["eval_seconds_each"]))
+        self.assertAlmostEqual(cooled["total_s"] - base["total_s"], cooled["cooling_s"])
+
+    def test_live_eta_includes_cooling(self):
+        steps = [fake_step(i, 20.0) for i in range(1, 14)]
+        s = tf.summarize(steps, 3, 10, ORIG["target_tokens"])
+        rec = {**steps[-1], "mem_peak_allocated_gib": 8.1}
+        plain = tf.format_live(rec, s, 1530, 3, ORIG["target_tokens"])
+        cooled = tf.format_live(rec, s, 1530, 3, ORIG["target_tokens"],
+                                {"pauses": 2, "pause_total_s": 120.0, "pause_per_compute_s": 0.5})
+        self.assertIn(f"ETA {tf.fmt_duration(s['eta_remaining_s'])}", plain)
+        self.assertIn(f"ETA {tf.fmt_duration(1.5 * s['eta_remaining_s'])}", cooled)
+        self.assertIn("2 pause(s), 2.0 min", cooled)
+
+    def test_report_shows_thresholds_and_pauses(self):
+        steps = [fake_step(i, 20.0) for i in range(1, 14)]
+        report = synthetic_report(steps=steps, evals=[fake_eval(0, 400.0, 300.0)])
+        report["effective_config"].update(cool_at_c=82.0, resume_at_c=77.0, max_temp_c=87.0, max_cool_wait_s=900.0)
+        md = tf.render_markdown(tf.finalize(report))
+        self.assertIn("pause at ≥ 82 °C until ≤ 77 °C (at most 900 s per pause); emergency stop above 87 °C", md)
+        self.assertIn("No cooling pause so far", md)
+        report["measurements"]["cooling_pauses"] = [{"phase": "training", "step": 5, "micro_batch": 3, "seconds": 50.0,
+                                                     "start_temp_c": 82, "end_temp_c": 77, "ended_by_stop": False}]
+        tf.finalize(report)
+        c = report["cooling"]
+        self.assertEqual(c["pauses"], 1)
+        self.assertAlmostEqual(c["pause_per_compute_s"], 50.0 / (10 * 20.0 + 400.0))
+        wc = report["estimates"]["wall_clock"]
+        self.assertGreater(wc["cooling_s"], 0)
+        self.assertAlmostEqual(report["estimates"]["eta_remaining_incl_cooling_s"],
+                               report["estimates"]["eta_remaining_s"] * (1 + c["pause_per_compute_s"]))
+        md = tf.render_markdown(report)
+        self.assertIn("| Cooling pauses (excluded from step and validation times) | 1, 0.8 min in total", md)
+        self.assertIn("+ cooling pauses", md)
+        self.assertIn("extrapolates the heat balance seen so far", md)
 
 
 class ReportTests(unittest.TestCase):
