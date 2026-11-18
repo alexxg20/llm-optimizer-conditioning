@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Real-training throughput / ETA harness for modded-nanogpt @ 9730304 on one laptop GPU.
+"""Runs the pinned modded-nanogpt @ 9730304 training on one GPU, with a live ETA, checkpoints and reports.
 
 The model, the Muon optimizer, and the data loader are executed from the unmodified pinned
 file (upstream/train_gpt2.py, sha256-verified); the pinned main loop is replicated below with
@@ -280,7 +280,7 @@ def non_training_differences(cfg):
         "Started as a plain Python process (RANK/WORLD_SIZE/MASTER_ADDR/MASTER_PORT set in-process) instead of "
         "torchrun; same NCCL process group.",
         f"PyTorch {torch.__version__} (CUDA {torch.version.cuda}) instead of {REFERENCE_8XH100['torch']}: the "
-        f"2024 nightly is not a stable release and has no kernels for newer GPUs (Blackwell sm_120 needs CUDA >= 12.8).",
+        f"2024 nightly is not a stable release and has no kernels for newer GPUs (e.g. Blackwell, sm_120, needs CUDA >= 12.8).",
         "Each optimizer step is timed with torch.cuda.synchronize() before and after (data loading, all "
         f"micro-batches, optimizer steps); the first {cfg.get('warmup_steps', '?')} steps (compilation/warm-up) are "
         "excluded from throughput (the original excludes its first 10 steps).",
@@ -1020,8 +1020,8 @@ def format_checkpoint_plan(plan, free_bytes):
     what = "weights only" if plan["weights_only"] else "weights + optimizer/scheduler state"
     return (f"Checkpoints: {plan['count']} × {plan['bytes_per_checkpoint'] / GIB:.2f} GiB ({what}) + consumed-data "
             f"records {plan['data_bytes'] / GIB:.2f} GiB = {plan['total_bytes'] / GIB:.1f} GiB for a full run in "
-            f"{plan['directory']}; free there: {free_bytes / GIB:.1f} GiB. On a network filesystem (e.g. the Gnoto "
-            "/home NAS) the quota may be lower than the free space shown.")
+            f"{plan['directory']}; free there: {free_bytes / GIB:.1f} GiB. On a network filesystem the quota may be lower "
+            "than the free space shown.")
 
 
 def file_sha256(path):
@@ -1170,14 +1170,14 @@ def feasibility(report):
                 "continuous full GPU load.")
     if hours <= 24:
         verdict = "feasible-single-run"
-        text = (f"{run_text} That is technically feasible for a single run, but it ties up the laptop for that long, "
+        text = (f"{run_text} That is technically feasible for a single run, but it ties up the GPU for that long, "
                 "and any research use (ablations, seeds, hyperparameter sweeps) multiplies it.")
     elif hours <= 24 * 7:
         verdict = "marginal"
         text = f"{run_text} That is possible only as a multi-day unattended run and is impractical for iterative research."
     else:
         verdict = "not-practical"
-        text = f"{run_text} That is not practical on a laptop."
+        text = f"{run_text} That is not practical on this GPU."
     if timed < MIN_STEPS_FOR_FIRM_VERDICT:
         verdict += " (provisional)"
         text += f" Provisional: based on only {timed} timed steps."
@@ -1220,7 +1220,7 @@ def uncertainty_notes(report):
                      "time; it is low if the GPU reaches that temperature later in the run.")
     env = report.get("environment") or {}
     if env.get("on_ac_power") is False:
-        notes.append("The laptop was on battery power; GPU power limits are usually lower on battery.")
+        notes.append("The machine was on battery power; laptop GPU power limits are usually lower on battery.")
     est = report.get("estimates") or {}
     wc = est.get("wall_clock") or {}
     evals = (report.get("measurements") or {}).get("evals") or []
@@ -1250,13 +1250,14 @@ def uncertainty_notes(report):
 
 
 BASE_LIMITATIONS = [
-    "The estimate assumes the throughput of the most recent moving-average window holds for the whole run. Laptop "
-    "GPUs can slow down further as the chassis heat-soaks over hours; the observed drift is reported above.",
+    "The estimate assumes the throughput of the most recent moving-average window holds for the whole run. A GPU "
+    "can slow down further as its cooling heat-soaks over hours; the observed drift is reported above.",
     "Single GPU only: this says nothing about multi-GPU scaling or communication cost on a cluster.",
-    "PyTorch/compiler version differs from the record (needed for Blackwell); kernel selection differs.",
+    "PyTorch/compiler version differs from the record (needed for GPUs its 2024 nightly has no kernels for); "
+    "kernel selection differs.",
     "The 95% interval assumes independent step times; step times are autocorrelated (thermal state), so it "
     "understates the true uncertainty. The fastest/slowest-window range is a more honest spread.",
-    "Background load on the laptop (browser, display, other GPU users) and the power source affect throughput.",
+    "Background load on the machine (browser, display, other GPU users) and the power source affect throughput.",
 ]
 
 
@@ -1372,7 +1373,7 @@ def render_markdown(report):
           f"- Approximate compute: 6 × {mm['matmul_params']:,} ≈ {mm['flops_per_token_matmul'] / 1e9:.2f} GFLOP per "
           f"token (matmuls only) → {mm['flops_per_token_matmul'] * o['target_tokens'] / 1e18:.2f} EFLOP for the budget.", ""]
 
-    L += ["## 2. Laptop GPU and environment", "",
+    L += ["## 2. GPU and environment", "",
           "| Property | Value |", "|---|---|"]
     rows = [("GPU", gpu.get("name")), ("VRAM", _f((gpu.get("vram_total_mib") or 0) / 1024, ".2f", " GiB") if gpu.get("vram_total_mib") else "n/a"),
             ("Compute capability", gpu.get("compute_capability")), ("Streaming multiprocessors", gpu.get("sm_count")),
@@ -1521,14 +1522,14 @@ def render_markdown(report):
 
     L += ["## 6. Limitations of the extrapolation", ""] + [f"- {x}" for x in report["limitations"]] + [""]
 
-    L += ["## 7. Is full pretraining on this laptop feasible?", "", f"**Verdict: {report['feasibility']['verdict']}.** "
+    L += ["## 7. Is full pretraining on this GPU feasible?", "", f"**Verdict: {report['feasibility']['verdict']}.** "
           f"{report['feasibility']['text']}", ""]
 
     L += ["## 8. Why a GPU cluster is preferable", ""]
     orig_row = pf.get("original") if pf else None
     if orig_row and orig_row["verdict"] not in RUNNABLE_VERDICTS:
         L.append(f"- Memory: the original configuration needs well over {orig_row['lower_bound_gib']:.0f} GiB per GPU "
-                 f"(central estimate {orig_row['central_gib']:.0f} GiB); this laptop has {pf['vram_total_gib']:.1f} GiB, so it "
+                 f"(central estimate {orig_row['central_gib']:.0f} GiB); this GPU has {pf['vram_total_gib']:.1f} GiB, so it "
                  "can only run a modified micro-batch setup. 80 GB GPUs such as the H100s used for the record run the original "
                  "configuration unchanged.")
     if measured:
@@ -1540,9 +1541,9 @@ def render_markdown(report):
     else:
         L.append(f"- Research needs many runs: the record at this commit was backed by {ref['runs']} runs on 8×H100 "
                  f"for its significance test ({ref['runs']} × {ref['train_time_s_mean'] / 60:.1f} min).")
-    L += ["- Multi-GPU nodes allow the designed 8-way data parallelism and its exact micro-batch layout, which this "
-          "laptop cannot reproduce.",
-          "- Sustained multi-hour full load on a laptop is thermally and mechanically stressful and blocks the machine "
+    L += ["- Multi-GPU nodes allow the designed 8-way data parallelism and its exact micro-batch layout, which a "
+          "single GPU cannot reproduce.",
+          "- Sustained multi-hour full load is thermally stressful for consumer and laptop GPUs and blocks the machine "
           "for other work; cluster nodes are built for continuous load and can be scheduled unattended.", ""]
     return "\n".join(L)
 
@@ -1937,7 +1938,7 @@ def train(up, cfg, run, telemetry, stop, registry_path, gpu):
             record_oom_failure(registry_path, oom_key(cfg, gpu), {"run_id": report["run_id"], **report["oom"]})
             run.log(f"\nCUDA out of memory during {where['phase']} (step {where['step']}, micro-batch {where['micro_batch']}); "
                     f"peak allocated {peak:.2f} GiB.\n{msg}\nThis configuration is recorded in {registry_path} and will not "
-                    "be retried automatically. Choose a smaller --micro-batch-tokens (a new deviation that needs approval).")
+                    "be retried automatically. Choose a smaller --micro-batch-tokens (a further deviation, also gated by --accept-deviations).")
             return EXIT_OOM
         if stop.requested:
             thermal = stop.reason == "thermal"
@@ -2166,7 +2167,7 @@ def main(argv=None):
         fits = [r for r in preflight["rows"] if r["verdict"] in RUNNABLE_VERDICTS]
         if fits:
             print("Memory-compatible alternatives keeping the full model, optimizers, data and token budget "
-                  "(each is a deviation that needs your approval):")
+                  "(each is a deviation that runs only with --accept-deviations):")
             for r in fits:
                 print(f"  --micro-batch-tokens {r['micro_batch_tokens']}{' --no-ddp' if not r['use_ddp'] else ''}"
                       f"  ({r['verdict']}, central {r['central_gib']:.1f} GiB, upper {r['upper_gib']:.1f} GiB)")
@@ -2178,7 +2179,7 @@ def main(argv=None):
         print("This configuration differs from the pinned one:")
         for d in deviations:
             print(f"  - {d['setting']}: {d['original']} -> {d['used']}\n      {d['consequence']}\n      {d['impact']}")
-        print("Nothing was run. If you approve these changes, re-run with --accept-deviations.")
+        print("Nothing was run. To run with these changes, re-run with --accept-deviations.")
         return EXIT_REFUSED
 
     prior = find_oom_failure(registry_path, oom_key(cfg, gpu))

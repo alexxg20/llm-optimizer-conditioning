@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Starts train_feasibility.py detached from the terminal, so it survives a closed browser tab or logout.
+# Starts train_feasibility.py detached from the terminal, so it survives closing the terminal or logging out.
 #   bash scripts/run_detached.sh <train_feasibility.py arguments>
 set -euo pipefail
 cd "$(dirname "$0")/.."

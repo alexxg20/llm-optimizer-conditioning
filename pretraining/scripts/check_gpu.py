@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """GPU compatibility check for the kernels the pinned modded-nanogpt model needs. It does not train.
 
-Runs each operation in bfloat16, the way train_gpt2.py uses it, compares it with an fp32 reference, and prints
-PASS/FAIL per item with the error text. Takes about 1-2 minutes (mostly torch.compile).
+Checks that the GPU has native bf16, then runs each operation in bfloat16 the way train_gpt2.py uses it, compares
+it with an fp32 reference, and prints PASS/FAIL per item with the error text. Takes about 1-2 minutes (mostly torch.compile).
 Run from pretraining/:  .venv/bin/python scripts/check_gpu.py
 """
 import sys
@@ -18,6 +18,15 @@ BF16 = torch.bfloat16
 
 def rel_err(a, b):
     return ((a.float() - b.float()).abs().max() / b.float().abs().max().clamp_min(1e-12)).item()
+
+
+def check_native_bf16():
+    # Results alone cannot catch this: torch.compile skips bf16 graphs on such GPUs and the eager fallback is
+    # numerically correct, but the model then runs uncompiled, far slower and out of memory in attention.
+    assert torch.cuda.is_bf16_supported(including_emulation=False), (
+        "no native bf16 (compute capability < 8.0): torch.compile skips the model's bf16 graphs, so training "
+        "runs uncompiled, far slower, and runs out of memory")
+    return "native bf16 available, so torch.compile compiles bf16 graphs"
 
 
 def check_bf16_matmul():
@@ -89,6 +98,7 @@ def check_rms_norm():
 
 def check_fused_adam():
     # Same shape and hyperparameters as the token-embedding Adam group in the pinned script.
+    torch.manual_seed(0)
     p = torch.nn.Parameter(torch.randn(50304, 768, device=DEVICE, dtype=BF16))
     before = p.detach().float().clone()
     opt = torch.optim.Adam([p], lr=0.6, betas=(0.8, 0.95), fused=True)
@@ -96,13 +106,17 @@ def check_fused_adam():
     opt.step()
     torch.cuda.synchronize()
     assert torch.isfinite(p).all(), "non-finite parameters after the step"
-    # Bias correction makes the first Adam step lr * g / (|g| + eps), i.e. about lr * sign(g).
-    dev = ((before - p.detach().float()) - 0.6 * p.grad.float().sign()).abs().max().item()
+    # Bias correction makes the first Adam step lr * g / (|g| + eps), i.e. about lr * sign(g). Among ~39M random
+    # gradients a few have |g| near eps (1e-8), where that step is legitimately much smaller, so only |g| >> eps is compared.
+    g = p.grad.float()
+    big = g.abs() > 1e-4
+    dev = ((before - p.detach().float()) - 0.6 * g.sign())[big].abs().max().item()
     assert dev < 0.05, f"first step deviates from lr*sign(grad) by {dev:.3f}"
     return f"first step matches lr*sign(grad) within {dev:.3f}"
 
 
 CHECKS = [
+    ("native bf16 support (required for torch.compile)", check_native_bf16),
     ("bf16 matmul", check_bf16_matmul),
     ("torch.compile'd FlexAttention forward+backward (bf16, causal+document+window block mask)", check_flex_attention),
     ("F.rms_norm, eager and torch.compile'd with backward (bf16)", check_rms_norm),

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Creates .venv, installs the torch build that supports this GPU, then requirements.txt. Safe to re-run.
+# Creates .venv, installs the torch build for the detected GPU, then requirements.txt. Safe to re-run.
+# Requires compute capability >= 8.0 (native bf16).
 #   PYTHON=python3.12 bash setup.sh       interpreter used to create .venv (default: python3)
-#   TORCH_INDEX=<url> bash setup.sh       force a PyTorch wheel index instead of choosing by GPU
+#   TORCH_INDEX=<url> bash setup.sh       force a PyTorch wheel index (skips the GPU check)
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -18,15 +19,13 @@ if [ -z "${TORCH_INDEX:-}" ]; then
         echo "error: nvidia-smi reports no GPU; set TORCH_INDEX to choose a PyTorch wheel index explicitly" >&2
         exit 1
     fi
-    # cu130 wheels start at sm_75; Volta (sm_70, e.g. V100) needs the cu126 build.
-    if awk -v c="$cap" 'BEGIN { exit !(c >= 7.5) }'; then
-        TORCH_INDEX=https://download.pytorch.org/whl/cu130
-    elif awk -v c="$cap" 'BEGIN { exit !(c >= 7.0) }'; then
-        TORCH_INDEX=https://download.pytorch.org/whl/cu126
-    else
-        echo "error: compute capability $cap is older than any torch $TORCH_VERSION CUDA build supports" >&2
+    # Without native bf16, torch.compile skips the model's bf16 graphs: it runs uncompiled, far slower,
+    # and runs out of memory in the attention fallback (observed on a V100).
+    if ! awk -v c="$cap" 'BEGIN { exit !(c >= 8.0) }'; then
+        echo "error: compute capability $cap has no native bf16; the pinned training needs >= 8.0 (Ampere or newer)" >&2
         exit 1
     fi
+    TORCH_INDEX=https://download.pytorch.org/whl/cu130
 fi
 echo "GPU compute capability: ${cap:-unknown}; torch index: $TORCH_INDEX"
 

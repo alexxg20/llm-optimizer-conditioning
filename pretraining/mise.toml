@@ -5,7 +5,7 @@ python = "3.12"
 _.python.venv = { path = ".venv", create = true }
 
 [tasks.setup]
-description = "Create .venv, install the torch build for this GPU and the pinned helpers"
+description = "Create .venv, install the torch build for the detected GPU and the pinned helpers"
 run = "bash setup.sh"
 
 [tasks.data]

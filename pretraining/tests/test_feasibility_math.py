@@ -507,9 +507,9 @@ class ThermalTests(unittest.TestCase):
 
 
 class ReportTests(unittest.TestCase):
-    SECTIONS = ["## 1. Original training requirements", "## 2. Laptop GPU", "## 3. Changes made to fit the model",
+    SECTIONS = ["## 1. Original training requirements", "## 2. GPU and environment", "## 3. Changes made to fit the model",
                 "## 4. Measured throughput and peak memory", "## 5. Estimated complete pretraining duration",
-                "## 6. Limitations of the extrapolation", "## 7. Is full pretraining on this laptop feasible?",
+                "## 6. Limitations of the extrapolation", "## 7. Is full pretraining on this GPU feasible?",
                 "## 8. Why a GPU cluster is preferable"]
     NO_ESTIMATE = "No reliable runtime estimate can be obtained for the original configuration"
 
