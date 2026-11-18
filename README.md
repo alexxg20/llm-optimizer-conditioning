@@ -14,6 +14,10 @@ the geometry of each optimizer) is compared across gradient descent, Adam and Mu
   [modded-nanogpt](https://github.com/KellerJordan/modded-nanogpt) record #14 on a single GPU, with a
   checkpoint every 10 % of training and the exact tokens consumed between checkpoints. Results in
   [`pretraining/RESULTS.md`](pretraining/RESULTS.md).
+- [`analysis/`](analysis/README.md): curvature of the local quadratic model at those checkpoints.
+  So far the largest Gauss–Newton eigenvalue (the smoothness constant of gradient descent) of the
+  `lm_head` block, by power iteration with matrix-free Gauss–Newton–vector products, at all 11
+  checkpoints, with checks on the number of windows and on warm starts.
 
 ## Checkpoints and data
 
