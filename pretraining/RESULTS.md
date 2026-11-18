@@ -46,11 +46,18 @@ Estimated split: **≈ 0.018 measurement, ≈ 0.024 training** (extrapolated, no
 
 Chunks longer than 4,096 cannot be used to measure this: the pinned `Rotary` computes position angles in
 bf16 and this model never trained on positions >= 4,096 (16k/32k/65k give 3.78/4.48/5.02).
-Results: `reports/20261115-232515-94a608/eval_chunks_001530{,_short}.json`.
+Raw results (local, not published): `reports/20261115-232515-94a608/eval_chunks_001530{,_short}.json`.
 
-## Artifacts (not in git)
+## Artifacts
 
-- `checkpoints/20261115-232515-94a608/`: 11 checkpoints (steps 0, 153, …, 1530) with optimizer state,
-  plus the consumed-token records, 42 GiB.
-- `checkpoints/20261115-232515-94a608-hf/`: sharing copy with a README, safetensors weights, logs and `SHA256SUMS`.
-- `reports/20261115-232515-94a608/`: run report and per-step log.
+Published on Hugging Face at
+[`epfl-optimizer-conditioning/modded-nanogpt-1gpu`](https://huggingface.co/epfl-optimizer-conditioning/modded-nanogpt-1gpu)
+(57 GiB, with `SHA256SUMS`):
+
+- `weights/`: weights at the 11 checkpoints (steps 0, 153, …, 1530), safetensors.
+- `full/`: the same checkpoints with optimizer and scheduler state and the data position.
+- `data/`: the consumed-token records between checkpoints.
+- `logs/`: the run report and per-step training log.
+
+Code: tag `run-20261115-232515` (`train_feasibility.py` sha256 `6fccecb5…`, the `harness_sha256`
+recorded in every checkpoint). Later commits change only wording and comments in that file.
