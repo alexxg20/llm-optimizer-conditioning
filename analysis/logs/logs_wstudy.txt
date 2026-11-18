@@ -1,0 +1,291 @@
+nohup: ignoring input
+checkpoint step: 918
+loaded /home/ML_project/nano_gpt/weights/model_step000918.safetensors with 625.8M parameters
+analysing 1 tensors, 38.6M parameters:
+    lm_head.weight (50304, 768)
+using cached hidden states for lm_head
+peak GPU memory after first product: 7.11 GiB
+iter    1  lambda=1.16685e-05  rel_change=nan  rel_resid=3.03e+02
+iter    2  lambda=7.253  rel_change=1.00e+00  rel_resid=5.97e-01
+iter    3  lambda=10.8248  rel_change=3.30e-01  rel_resid=2.14e-01
+iter    4  lambda=11.6044  rel_change=6.72e-02  rel_resid=1.22e-01
+iter    5  lambda=11.8855  rel_change=2.37e-02  rel_resid=7.58e-02
+iter    6  lambda=11.9982  rel_change=9.39e-03  rel_resid=4.96e-02
+iter    7  lambda=12.0478  rel_change=4.12e-03  rel_resid=3.43e-02
+iter    8  lambda=12.0722  rel_change=2.02e-03  rel_resid=2.50e-02
+iter    9  lambda=12.0855  rel_change=1.10e-03  rel_resid=1.90e-02
+iter   10  lambda=12.0933  rel_change=6.49e-04  rel_resid=1.51e-02
+iter   11  lambda=12.0983  rel_change=4.14e-04  rel_resid=1.24e-02
+iter   12  lambda=12.1018  rel_change=2.84e-04  rel_resid=1.05e-02
+iter   13  lambda=12.1042  rel_change=2.03e-04  rel_resid=9.10e-03
+iter   14  lambda=12.1061  rel_change=1.56e-04  rel_resid=8.03e-03
+iter   15  lambda=12.1076  rel_change=1.23e-04  rel_resid=7.19e-03
+iter   16  lambda=12.1088  rel_change=9.88e-05  rel_resid=6.50e-03
+iter   17  lambda=12.1097  rel_change=7.88e-05  rel_resid=5.91e-03
+iter   18  lambda=12.1106  rel_change=6.82e-05  rel_resid=5.40e-03
+iter   19  lambda=12.1112  rel_change=5.56e-05  rel_resid=4.94e-03
+iter   20  lambda=12.1118  rel_change=4.65e-05  rel_resid=4.53e-03
+iter   21  lambda=12.1123  rel_change=3.87e-05  rel_resid=4.16e-03
+iter   22  lambda=12.1127  rel_change=3.37e-05  rel_resid=3.82e-03
+iter   23  lambda=12.113  rel_change=2.83e-05  rel_resid=3.51e-03
+iter   24  lambda=12.1133  rel_change=2.31e-05  rel_resid=3.23e-03
+iter   25  lambda=12.1135  rel_change=2.05e-05  rel_resid=2.97e-03
+iter   26  lambda=12.1138  rel_change=1.66e-05  rel_resid=2.73e-03
+iter   27  lambda=12.1139  rel_change=1.40e-05  rel_resid=2.51e-03
+iter   28  lambda=12.1141  rel_change=1.27e-05  rel_resid=2.31e-03
+iter   29  lambda=12.1142  rel_change=1.01e-05  rel_resid=2.12e-03
+iter   30  lambda=12.1143  rel_change=9.05e-06  rel_resid=1.95e-03
+iter   31  lambda=12.1144  rel_change=7.71e-06  rel_resid=1.79e-03
+iter   32  lambda=12.1145  rel_change=5.83e-06  rel_resid=1.65e-03
+iter   33  lambda=12.1145  rel_change=5.04e-06  rel_resid=1.52e-03
+iter   34  lambda=12.1146  rel_change=4.17e-06  rel_resid=1.40e-03
+iter   35  lambda=12.1146  rel_change=4.41e-06  rel_resid=1.28e-03
+iter   36  lambda=12.1147  rel_change=2.13e-06  rel_resid=1.18e-03
+iter   37  lambda=12.1147  rel_change=2.83e-06  rel_resid=1.08e-03
+iter   38  lambda=12.1147  rel_change=2.68e-06  rel_resid=9.97e-04
+converged after 38 iterations
+saved results/W_study_918/step000918_lm-head_S4096_W8_seed0_set0_20261117-214245.json results/W_study_918/step000918_lm-head_S4096_W8_seed0_set0_20261117-214245.png and results/W_study_918/step000918_lm-head_S4096_W8_seed0_set0_20261117-214245_eigvec.npy
+checkpoint step: 918
+loaded /home/ML_project/nano_gpt/weights/model_step000918.safetensors with 625.8M parameters
+analysing 1 tensors, 38.6M parameters:
+    lm_head.weight (50304, 768)
+using cached hidden states for lm_head
+warm start from results/W_study_918/step000918_lm-head_S4096_W8_seed0_set0_20261117-214245_eigvec.npy
+peak GPU memory after first product: 7.11 GiB
+iter    1  lambda=10.2091  rel_change=nan  rel_resid=3.88e-02
+iter    2  lambda=10.2273  rel_change=1.78e-03  rel_resid=1.68e-02
+iter    3  lambda=10.2334  rel_change=5.96e-04  rel_resid=1.89e-02
+iter    4  lambda=10.2412  rel_change=7.59e-04  rel_resid=2.15e-02
+iter    5  lambda=10.2513  rel_change=9.87e-04  rel_resid=2.45e-02
+iter    6  lambda=10.2645  rel_change=1.28e-03  rel_resid=2.79e-02
+iter    7  lambda=10.2815  rel_change=1.66e-03  rel_resid=3.17e-02
+iter    8  lambda=10.3036  rel_change=2.14e-03  rel_resid=3.58e-02
+iter    9  lambda=10.3318  rel_change=2.73e-03  rel_resid=4.03e-02
+iter   10  lambda=10.3674  rel_change=3.44e-03  rel_resid=4.51e-02
+iter   11  lambda=10.412  rel_change=4.28e-03  rel_resid=5.00e-02
+iter   12  lambda=10.4669  rel_change=5.24e-03  rel_resid=5.49e-02
+iter   13  lambda=10.533  rel_change=6.28e-03  rel_resid=5.96e-02
+iter   14  lambda=10.6108  rel_change=7.33e-03  rel_resid=6.38e-02
+iter   15  lambda=10.6997  rel_change=8.31e-03  rel_resid=6.71e-02
+iter   16  lambda=10.7982  rel_change=9.12e-03  rel_resid=6.94e-02
+iter   17  lambda=10.9034  rel_change=9.65e-03  rel_resid=7.04e-02
+iter   18  lambda=11.0116  rel_change=9.82e-03  rel_resid=7.00e-02
+iter   19  lambda=11.1186  rel_change=9.62e-03  rel_resid=6.82e-02
+iter   20  lambda=11.2204  rel_change=9.07e-03  rel_resid=6.53e-02
+iter   21  lambda=11.3136  rel_change=8.24e-03  rel_resid=6.15e-02
+iter   22  lambda=11.3963  rel_change=7.25e-03  rel_resid=5.70e-02
+iter   23  lambda=11.4674  rel_change=6.20e-03  rel_resid=5.21e-02
+iter   24  lambda=11.5269  rel_change=5.17e-03  rel_resid=4.72e-02
+iter   25  lambda=11.5757  rel_change=4.22e-03  rel_resid=4.23e-02
+iter   26  lambda=11.615  rel_change=3.38e-03  rel_resid=3.77e-02
+iter   27  lambda=11.6463  rel_change=2.68e-03  rel_resid=3.34e-02
+iter   28  lambda=11.6707  rel_change=2.10e-03  rel_resid=2.95e-02
+iter   29  lambda=11.6898  rel_change=1.63e-03  rel_resid=2.59e-02
+iter   30  lambda=11.7045  rel_change=1.26e-03  rel_resid=2.27e-02
+iter   31  lambda=11.7158  rel_change=9.65e-04  rel_resid=1.98e-02
+iter   32  lambda=11.7244  rel_change=7.36e-04  rel_resid=1.73e-02
+iter   33  lambda=11.731  rel_change=5.61e-04  rel_resid=1.51e-02
+iter   34  lambda=11.736  rel_change=4.26e-04  rel_resid=1.32e-02
+iter   35  lambda=11.7398  rel_change=3.24e-04  rel_resid=1.15e-02
+iter   36  lambda=11.7427  rel_change=2.46e-04  rel_resid=9.97e-03
+iter   37  lambda=11.7449  rel_change=1.85e-04  rel_resid=8.67e-03
+iter   38  lambda=11.7465  rel_change=1.40e-04  rel_resid=7.54e-03
+iter   39  lambda=11.7478  rel_change=1.07e-04  rel_resid=6.55e-03
+iter   40  lambda=11.7487  rel_change=7.99e-05  rel_resid=5.70e-03
+iter   41  lambda=11.7494  rel_change=6.10e-05  rel_resid=4.95e-03
+iter   42  lambda=11.75  rel_change=4.63e-05  rel_resid=4.30e-03
+iter   43  lambda=11.7504  rel_change=3.36e-05  rel_resid=3.74e-03
+iter   44  lambda=11.7507  rel_change=2.67e-05  rel_resid=3.25e-03
+iter   45  lambda=11.7509  rel_change=1.95e-05  rel_resid=2.82e-03
+iter   46  lambda=11.7511  rel_change=1.46e-05  rel_resid=2.45e-03
+iter   47  lambda=11.7512  rel_change=1.07e-05  rel_resid=2.13e-03
+iter   48  lambda=11.7513  rel_change=9.41e-06  rel_resid=1.85e-03
+iter   49  lambda=11.7514  rel_change=6.33e-06  rel_resid=1.61e-03
+iter   50  lambda=11.7514  rel_change=4.79e-06  rel_resid=1.40e-03
+iter   51  lambda=11.7515  rel_change=3.00e-06  rel_resid=1.21e-03
+iter   52  lambda=11.7515  rel_change=2.68e-06  rel_resid=1.06e-03
+iter   53  lambda=11.7515  rel_change=2.03e-06  rel_resid=9.17e-04
+converged after 53 iterations
+saved results/W_study_918/step000918_lm-head_S4096_W16_seed0_set0_20261117-214857.json results/W_study_918/step000918_lm-head_S4096_W16_seed0_set0_20261117-214857.png and results/W_study_918/step000918_lm-head_S4096_W16_seed0_set0_20261117-214857_eigvec.npy
+checkpoint step: 918
+loaded /home/ML_project/nano_gpt/weights/model_step000918.safetensors with 625.8M parameters
+analysing 1 tensors, 38.6M parameters:
+    lm_head.weight (50304, 768)
+using cached hidden states for lm_head
+warm start from results/W_study_918/step000918_lm-head_S4096_W16_seed0_set0_20261117-214857_eigvec.npy
+peak GPU memory after first product: 7.11 GiB
+iter    1  lambda=11.4101  rel_change=nan  rel_resid=4.35e-02
+iter    2  lambda=11.4369  rel_change=2.34e-03  rel_resid=1.73e-02
+iter    3  lambda=11.4427  rel_change=5.10e-04  rel_resid=1.27e-02
+iter    4  lambda=11.4461  rel_change=2.94e-04  rel_resid=1.07e-02
+iter    5  lambda=11.4486  rel_change=2.18e-04  rel_resid=9.89e-03
+iter    6  lambda=11.4508  rel_change=1.93e-04  rel_resid=9.69e-03
+iter    7  lambda=11.453  rel_change=1.88e-04  rel_resid=9.75e-03
+iter    8  lambda=11.4552  rel_change=1.92e-04  rel_resid=9.95e-03
+iter    9  lambda=11.4574  rel_change=2.00e-04  rel_resid=1.02e-02
+iter   10  lambda=11.4599  rel_change=2.12e-04  rel_resid=1.05e-02
+iter   11  lambda=11.4625  rel_change=2.26e-04  rel_resid=1.09e-02
+iter   12  lambda=11.4652  rel_change=2.38e-04  rel_resid=1.12e-02
+iter   13  lambda=11.4681  rel_change=2.55e-04  rel_resid=1.16e-02
+iter   14  lambda=11.4712  rel_change=2.72e-04  rel_resid=1.19e-02
+iter   15  lambda=11.4746  rel_change=2.89e-04  rel_resid=1.23e-02
+iter   16  lambda=11.4781  rel_change=3.07e-04  rel_resid=1.27e-02
+iter   17  lambda=11.4818  rel_change=3.25e-04  rel_resid=1.30e-02
+iter   18  lambda=11.4858  rel_change=3.46e-04  rel_resid=1.34e-02
+iter   19  lambda=11.49  rel_change=3.65e-04  rel_resid=1.38e-02
+iter   20  lambda=11.4944  rel_change=3.86e-04  rel_resid=1.42e-02
+iter   21  lambda=11.4991  rel_change=4.08e-04  rel_resid=1.46e-02
+iter   22  lambda=11.5041  rel_change=4.30e-04  rel_resid=1.49e-02
+iter   23  lambda=11.5093  rel_change=4.52e-04  rel_resid=1.53e-02
+iter   24  lambda=11.5147  rel_change=4.75e-04  rel_resid=1.57e-02
+iter   25  lambda=11.5205  rel_change=4.99e-04  rel_resid=1.61e-02
+iter   26  lambda=11.5265  rel_change=5.23e-04  rel_resid=1.64e-02
+iter   27  lambda=11.5328  rel_change=5.43e-04  rel_resid=1.68e-02
+iter   28  lambda=11.5393  rel_change=5.66e-04  rel_resid=1.71e-02
+iter   29  lambda=11.5461  rel_change=5.89e-04  rel_resid=1.74e-02
+iter   30  lambda=11.5532  rel_change=6.11e-04  rel_resid=1.77e-02
+iter   31  lambda=11.5605  rel_change=6.33e-04  rel_resid=1.80e-02
+iter   32  lambda=11.568  rel_change=6.53e-04  rel_resid=1.83e-02
+iter   33  lambda=11.5758  rel_change=6.72e-04  rel_resid=1.85e-02
+iter   34  lambda=11.5838  rel_change=6.90e-04  rel_resid=1.87e-02
+iter   35  lambda=11.592  rel_change=7.04e-04  rel_resid=1.89e-02
+iter   36  lambda=11.6003  rel_change=7.21e-04  rel_resid=1.91e-02
+iter   37  lambda=11.6088  rel_change=7.32e-04  rel_resid=1.93e-02
+iter   38  lambda=11.6175  rel_change=7.43e-04  rel_resid=1.94e-02
+iter   39  lambda=11.6262  rel_change=7.51e-04  rel_resid=1.95e-02
+iter   40  lambda=11.635  rel_change=7.62e-04  rel_resid=1.95e-02
+iter   41  lambda=11.6439  rel_change=7.63e-04  rel_resid=1.96e-02
+iter   42  lambda=11.6529  rel_change=7.66e-04  rel_resid=1.96e-02
+iter   43  lambda=11.6618  rel_change=7.64e-04  rel_resid=1.95e-02
+iter   44  lambda=11.6707  rel_change=7.62e-04  rel_resid=1.95e-02
+iter   45  lambda=11.6795  rel_change=7.57e-04  rel_resid=1.94e-02
+iter   46  lambda=11.6883  rel_change=7.50e-04  rel_resid=1.93e-02
+iter   47  lambda=11.6969  rel_change=7.40e-04  rel_resid=1.91e-02
+iter   48  lambda=11.7055  rel_change=7.30e-04  rel_resid=1.90e-02
+iter   49  lambda=11.7139  rel_change=7.17e-04  rel_resid=1.88e-02
+iter   50  lambda=11.7221  rel_change=7.02e-04  rel_resid=1.86e-02
+iter   51  lambda=11.7301  rel_change=6.83e-04  rel_resid=1.83e-02
+iter   52  lambda=11.7379  rel_change=6.68e-04  rel_resid=1.81e-02
+iter   53  lambda=11.7455  rel_change=6.45e-04  rel_resid=1.78e-02
+iter   54  lambda=11.7529  rel_change=6.27e-04  rel_resid=1.75e-02
+iter   55  lambda=11.76  rel_change=6.06e-04  rel_resid=1.72e-02
+iter   56  lambda=11.7669  rel_change=5.83e-04  rel_resid=1.68e-02
+iter   57  lambda=11.7735  rel_change=5.60e-04  rel_resid=1.65e-02
+iter   58  lambda=11.7798  rel_change=5.37e-04  rel_resid=1.61e-02
+iter   59  lambda=11.7859  rel_change=5.14e-04  rel_resid=1.58e-02
+iter   60  lambda=11.7917  rel_change=4.92e-04  rel_resid=1.54e-02
+iter   61  lambda=11.7972  rel_change=4.68e-04  rel_resid=1.50e-02
+iter   62  lambda=11.8025  rel_change=4.46e-04  rel_resid=1.47e-02
+iter   63  lambda=11.8074  rel_change=4.23e-04  rel_resid=1.43e-02
+iter   64  lambda=11.8122  rel_change=4.03e-04  rel_resid=1.39e-02
+iter   65  lambda=11.8167  rel_change=3.80e-04  rel_resid=1.35e-02
+iter   66  lambda=11.8209  rel_change=3.59e-04  rel_resid=1.31e-02
+iter   67  lambda=11.8249  rel_change=3.39e-04  rel_resid=1.27e-02
+iter   68  lambda=11.8287  rel_change=3.20e-04  rel_resid=1.24e-02
+iter   69  lambda=11.8323  rel_change=3.02e-04  rel_resid=1.20e-02
+iter   70  lambda=11.8357  rel_change=2.83e-04  rel_resid=1.16e-02
+iter   71  lambda=11.8388  rel_change=2.68e-04  rel_resid=1.13e-02
+iter   72  lambda=11.8418  rel_change=2.48e-04  rel_resid=1.09e-02
+iter   73  lambda=11.8445  rel_change=2.35e-04  rel_resid=1.06e-02
+iter   74  lambda=11.8471  rel_change=2.19e-04  rel_resid=1.02e-02
+iter   75  lambda=11.8496  rel_change=2.05e-04  rel_resid=9.87e-03
+iter   76  lambda=11.8518  rel_change=1.92e-04  rel_resid=9.54e-03
+iter   77  lambda=11.8539  rel_change=1.79e-04  rel_resid=9.22e-03
+iter   78  lambda=11.8559  rel_change=1.67e-04  rel_resid=8.90e-03
+iter   79  lambda=11.8578  rel_change=1.57e-04  rel_resid=8.60e-03
+iter   80  lambda=11.8595  rel_change=1.45e-04  rel_resid=8.30e-03
+iter   81  lambda=11.8611  rel_change=1.33e-04  rel_resid=8.01e-03
+iter   82  lambda=11.8626  rel_change=1.27e-04  rel_resid=7.73e-03
+iter   83  lambda=11.864  rel_change=1.18e-04  rel_resid=7.45e-03
+iter   84  lambda=11.8653  rel_change=1.09e-04  rel_resid=7.19e-03
+iter   85  lambda=11.8665  rel_change=1.01e-04  rel_resid=6.93e-03
+iter   86  lambda=11.8676  rel_change=9.42e-05  rel_resid=6.68e-03
+iter   87  lambda=11.8686  rel_change=8.89e-05  rel_resid=6.44e-03
+iter   88  lambda=11.8696  rel_change=8.13e-05  rel_resid=6.20e-03
+iter   89  lambda=11.8705  rel_change=7.66e-05  rel_resid=5.98e-03
+iter   90  lambda=11.8714  rel_change=7.05e-05  rel_resid=5.76e-03
+iter   91  lambda=11.8721  rel_change=6.49e-05  rel_resid=5.55e-03
+iter   92  lambda=11.8728  rel_change=6.02e-05  rel_resid=5.34e-03
+iter   93  lambda=11.8735  rel_change=5.63e-05  rel_resid=5.14e-03
+iter   94  lambda=11.8741  rel_change=5.20e-05  rel_resid=4.95e-03
+iter   95  lambda=11.8747  rel_change=4.81e-05  rel_resid=4.77e-03
+iter   96  lambda=11.8752  rel_change=4.38e-05  rel_resid=4.59e-03
+iter   97  lambda=11.8757  rel_change=4.21e-05  rel_resid=4.42e-03
+iter   98  lambda=11.8762  rel_change=3.77e-05  rel_resid=4.25e-03
+iter   99  lambda=11.8766  rel_change=3.49e-05  rel_resid=4.10e-03
+iter  100  lambda=11.877  rel_change=3.37e-05  rel_resid=3.94e-03
+iter  101  lambda=11.8773  rel_change=3.00e-05  rel_resid=3.79e-03
+iter  102  lambda=11.8777  rel_change=2.90e-05  rel_resid=3.65e-03
+iter  103  lambda=11.878  rel_change=2.60e-05  rel_resid=3.51e-03
+iter  104  lambda=11.8783  rel_change=2.42e-05  rel_resid=3.38e-03
+iter  105  lambda=11.8786  rel_change=2.31e-05  rel_resid=3.25e-03
+iter  106  lambda=11.8788  rel_change=2.02e-05  rel_resid=3.13e-03
+iter  107  lambda=11.879  rel_change=1.87e-05  rel_resid=3.01e-03
+iter  108  lambda=11.8792  rel_change=1.81e-05  rel_resid=2.90e-03
+iter  109  lambda=11.8794  rel_change=1.70e-05  rel_resid=2.79e-03
+iter  110  lambda=11.8796  rel_change=1.43e-05  rel_resid=2.68e-03
+iter  111  lambda=11.8798  rel_change=1.38e-05  rel_resid=2.58e-03
+iter  112  lambda=11.8799  rel_change=1.37e-05  rel_resid=2.48e-03
+iter  113  lambda=11.8801  rel_change=1.12e-05  rel_resid=2.39e-03
+iter  114  lambda=11.8802  rel_change=1.09e-05  rel_resid=2.29e-03
+iter  115  lambda=11.8803  rel_change=1.03e-05  rel_resid=2.21e-03
+iter  116  lambda=11.8804  rel_change=9.39e-06  rel_resid=2.12e-03
+iter  117  lambda=11.8805  rel_change=9.39e-06  rel_resid=2.04e-03
+iter  118  lambda=11.8806  rel_change=7.22e-06  rel_resid=1.96e-03
+iter  119  lambda=11.8807  rel_change=8.11e-06  rel_resid=1.89e-03
+iter  120  lambda=11.8808  rel_change=7.22e-06  rel_resid=1.82e-03
+iter  121  lambda=11.8809  rel_change=7.06e-06  rel_resid=1.75e-03
+iter  122  lambda=11.881  rel_change=5.78e-06  rel_resid=1.68e-03
+iter  123  lambda=11.881  rel_change=5.14e-06  rel_resid=1.62e-03
+iter  124  lambda=11.8811  rel_change=5.30e-06  rel_resid=1.55e-03
+iter  125  lambda=11.8811  rel_change=4.58e-06  rel_resid=1.49e-03
+iter  126  lambda=11.8812  rel_change=4.25e-06  rel_resid=1.44e-03
+iter  127  lambda=11.8812  rel_change=3.21e-06  rel_resid=1.38e-03
+iter  128  lambda=11.8813  rel_change=4.58e-06  rel_resid=1.33e-03
+iter  129  lambda=11.8813  rel_change=3.45e-06  rel_resid=1.28e-03
+iter  130  lambda=11.8814  rel_change=2.97e-06  rel_resid=1.23e-03
+iter  131  lambda=11.8814  rel_change=3.13e-06  rel_resid=1.18e-03
+iter  132  lambda=11.8814  rel_change=1.61e-06  rel_resid=1.14e-03
+iter  133  lambda=11.8815  rel_change=3.37e-06  rel_resid=1.09e-03
+iter  134  lambda=11.8815  rel_change=2.17e-06  rel_resid=1.05e-03
+iter  135  lambda=11.8815  rel_change=2.89e-06  rel_resid=1.01e-03
+iter  136  lambda=11.8815  rel_change=2.17e-06  rel_resid=9.72e-04
+converged after 136 iterations
+saved results/W_study_918/step000918_lm-head_S4096_W32_seed0_set0_20261117-220656.json results/W_study_918/step000918_lm-head_S4096_W32_seed0_set0_20261117-220656.png and results/W_study_918/step000918_lm-head_S4096_W32_seed0_set0_20261117-220656_eigvec.npy
+checkpoint step: 918
+loaded /home/ML_project/nano_gpt/weights/model_step000918.safetensors with 625.8M parameters
+analysing 1 tensors, 38.6M parameters:
+    lm_head.weight (50304, 768)
+using cached hidden states for lm_head
+warm start from results/W_study_918/step000918_lm-head_S4096_W32_seed0_set0_20261117-220656_eigvec.npy
+peak GPU memory after first product: 7.11 GiB
+iter    1  lambda=11.8248  rel_change=nan  rel_resid=1.74e-02
+iter    2  lambda=11.8285  rel_change=3.13e-04  rel_resid=1.24e-03
+iter    3  lambda=11.8285  rel_change=2.02e-06  rel_resid=7.85e-04
+converged after 3 iterations
+saved results/W_study_918/step000918_lm-head_S4096_W64_seed0_set0_20261117-220759.json results/W_study_918/step000918_lm-head_S4096_W64_seed0_set0_20261117-220759.png and results/W_study_918/step000918_lm-head_S4096_W64_seed0_set0_20261117-220759_eigvec.npy
+checkpoint step: 918
+loaded /home/ML_project/nano_gpt/weights/model_step000918.safetensors with 625.8M parameters
+analysing 1 tensors, 38.6M parameters:
+    lm_head.weight (50304, 768)
+using cached hidden states for lm_head
+warm start from results/W_study_918/step000918_lm-head_S4096_W64_seed0_set0_20261117-220759_eigvec.npy
+peak GPU memory after first product: 7.11 GiB
+iter    1  lambda=11.7035  rel_change=nan  rel_resid=1.43e-02
+iter    2  lambda=11.706  rel_change=2.10e-04  rel_resid=1.66e-03
+iter    3  lambda=11.706  rel_change=4.64e-06  rel_resid=1.38e-03
+iter    4  lambda=11.7061  rel_change=4.32e-06  rel_resid=1.25e-03
+iter    5  lambda=11.7061  rel_change=3.10e-06  rel_resid=1.17e-03
+iter    6  lambda=11.7062  rel_change=1.96e-06  rel_resid=1.11e-03
+iter    7  lambda=11.7062  rel_change=3.83e-06  rel_resid=1.06e-03
+iter    8  lambda=11.7062  rel_change=1.38e-06  rel_resid=1.02e-03
+iter    9  lambda=11.7062  rel_change=1.22e-06  rel_resid=9.76e-04
+converged after 9 iterations
+saved results/W_study_918/step000918_lm-head_S4096_W128_seed0_set0_20261117-221154.json results/W_study_918/step000918_lm-head_S4096_W128_seed0_set0_20261117-221154.png and results/W_study_918/step000918_lm-head_S4096_W128_seed0_set0_20261117-221154_eigvec.npy
+  W  params  seed  set  lambda_max  two_over_lambda  iterations  final_resid  converged  seconds_total  peak_gpu_gib
+  8 lm_head     0    0   12.114727         0.165088          38     0.000997       True     162.468428      7.107989
+ 16 lm_head     0    0   11.751537         0.170190          53     0.000917       True     349.861073      7.108233
+ 32 lm_head     0    0   11.881542         0.168328         136     0.000972       True    1050.215132      7.108721
+ 64 lm_head     0    0   11.828532         0.169083           3     0.000785       True      32.586732      7.109698
+128 lm_head     0    0   11.706225         0.170849           9     0.000976       True     190.256749      7.111651
+saved results/W_study_918/summary.csv results/W_study_918/lambda_vs_W.png results/W_study_918/convergence_overlay.png
