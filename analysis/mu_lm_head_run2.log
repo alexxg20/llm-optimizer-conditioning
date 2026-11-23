@@ -1,0 +1,27 @@
+nohup: ignoring input
+checkpoint step: 1530
+loaded /home/ML_project/nano_gpt/weights/model_step001530.safetensors with 625.8M parameters
+block lm_head: 1 tensor(s), n = 38,633,472 parameters
+    lm_head.weight (50304, 768)
+[structure] hidden-state rank = 768 of 768; exact nullity = 0
+[floor] no exact null direction for this block
+   product 10, 264 s
+   product 20, 561 s
+   product 30, 834 s
+   product 40, 1113 s
+   product 50, 1388 s
+   product 60, 1661 s
+   product 70, 1936 s
+   product 80, 2209 s
+   product 90, 2482 s
+   product 100, 2760 s
+   product 110, 3034 s
+   product 120, 3311 s
+   product 130, 3586 s
+   product 140, 3859 s
+   product 150, 4139 s
+   product 160, 4416 s
+   product 170, 4688 s
+   product 180, 4961 s
+   product 190, 5235 s
+   product 200, 5508 s

@@ -1,0 +1,115 @@
+nohup: ignoring input
+checkpoint step: 1530
+loaded /home/ML_project/nano_gpt/weights/model_step001530.safetensors with 625.8M parameters
+block lm_head: 1 tensor(s), n = 38,633,472 parameters
+    lm_head.weight (50304, 768)
+[structure] hidden-state rank = 768 of 768; exact nullity = 0
+[floor] no exact null direction for this block
+   product 10, 224 s
+   product 20, 484 s
+   product 30, 752 s
+   product 40, 1007 s
+   product 50, 1263 s
+   product 60, 1518 s
+   product 70, 1847 s
+   product 80, 2186 s
+   product 90, 2525 s
+   product 100, 2865 s
+   product 110, 3204 s
+   product 120, 3479 s
+   product 130, 3735 s
+   product 140, 3990 s
+   product 150, 4245 s
+   product 160, 4500 s
+   product 170, 4755 s
+   product 180, 5010 s
+   product 190, 5264 s
+   product 200, 5519 s
+   product 210, 5774 s
+   product 220, 6029 s
+   product 230, 6282 s
+   product 240, 6537 s
+   product 250, 6791 s
+   product 260, 7047 s
+   product 270, 7301 s
+   product 280, 7556 s
+   product 290, 7810 s
+   product 300, 8066 s
+   product 310, 8321 s
+   product 320, 8576 s
+   product 330, 8830 s
+   product 340, 9085 s
+   product 350, 9339 s
+   product 360, 9595 s
+   product 370, 9850 s
+   product 380, 10105 s
+   product 390, 10360 s
+   product 400, 10615 s
+   product 410, 10869 s
+   product 420, 11124 s
+   product 430, 11379 s
+   product 440, 11634 s
+   product 450, 11888 s
+   product 460, 12144 s
+   product 470, 12399 s
+   product 480, 12655 s
+   product 490, 12910 s
+   product 500, 13165 s
+   product 510, 13420 s
+   product 520, 13676 s
+   product 530, 13943 s
+   product 540, 14197 s
+   product 550, 14534 s
+   product 560, 14867 s
+   product 570, 15121 s
+   product 580, 15376 s
+   product 590, 15631 s
+   product 600, 15887 s
+   product 610, 16141 s
+   product 620, 16396 s
+   product 630, 16651 s
+   product 640, 16907 s
+   product 650, 17161 s
+   product 660, 17416 s
+   product 670, 17671 s
+   product 680, 17927 s
+   product 690, 18182 s
+   product 700, 18437 s
+   product 710, 18691 s
+   product 720, 18947 s
+   product 730, 19201 s
+   product 740, 19457 s
+   product 750, 19711 s
+   product 760, 19966 s
+   product 770, 20221 s
+   product 780, 20476 s
+   product 790, 20731 s
+   product 800, 20987 s
+   product 810, 21242 s
+   product 820, 21497 s
+   product 830, 21752 s
+   product 840, 22006 s
+   product 850, 22261 s
+   product 860, 22516 s
+   product 870, 22771 s
+   product 880, 23026 s
+   product 890, 23281 s
+   product 900, 23536 s
+   product 910, 23791 s
+   product 920, 24046 s
+   product 930, 24301 s
+   product 940, 24556 s
+   product 950, 24810 s
+   product 960, 25065 s
+   product 970, 25320 s
+
+[7d] 971 products in 25373 s
+[7d] smallest eigenvalues of G on the complement:
+      2.769355e-07   (relative to lam: 2.727e-08)
+
+[rank] exact nullity = 0
+[rank] zero threshold = 1.016e-05; computed eigenvalues below it: 1 of 1
+[rank] full rank: False
+[mu] no nonzero eigenvalue among the k computed: rerun with a larger --k
+
+saved results/mu_block/lm_head_step001530_W128_20261122-225206.json

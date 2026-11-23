@@ -1,0 +1,29 @@
+nohup: ignoring input
+checkpoint step: 1530
+loaded /home/ML_project/nano_gpt/weights/model_step001530.safetensors with 625.8M parameters
+lm_head: V=50304, d=768, n=38,633,472; 128 windows
+[check] float64 vs float32 product, relative difference: 6.435e-07
+[check] symmetry, relative difference: 3.282e-14
+   product 10, 454 s
+   product 20, 923 s
+   product 30, 1399 s
+   product 40, 1830 s
+   product 50, 2184 s
+   product 60, 2611 s
+   product 70, 3086 s
+   product 80, 3560 s
+   product 90, 4034 s
+   product 100, 4434 s
+   product 110, 4822 s
+   product 120, 5332 s
+   product 130, 5894 s
+   product 140, 6453 s
+   product 150, 7008 s
+   product 160, 7506 s
+   product 170, 7998 s
+   product 180, 8367 s
+   product 190, 8717 s
+   product 200, 9107 s
+   product 210, 9482 s
+   product 220, 9832 s
+   product 230, 10182 s
