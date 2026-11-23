@@ -1,0 +1,41 @@
+{
+  "config": {
+    "ckpt": "/home/ML_project/nano_gpt/weights/model_step001530.safetensors",
+    "step": 1530,
+    "shard": "/home/ML_project/analysis/fineweb10B/fineweb_val_000000.bin",
+    "block": "lm_head",
+    "layer": 0,
+    "S": 4096,
+    "W": 128,
+    "set": 0,
+    "lam_max": 10.156249046325684,
+    "k": 1,
+    "rank_tol": 1e-10,
+    "zero_tol": 1e-06,
+    "seed": 0,
+    "out": "results",
+    "exp": "mu_block",
+    "n": 38633472
+  },
+  "tensors": {
+    "lm_head.weight": [
+      50304,
+      768
+    ]
+  },
+  "exact_nullity": 0,
+  "noise_floor": null,
+  "lam_max": 10.156249046325684,
+  "shift_c": 20.312498092651367,
+  "smallest_eigs": [
+    2.7693552340224414e-07
+  ],
+  "relative": [
+    2.7267500249261176e-08
+  ],
+  "zero_threshold": 1.0156249046325684e-05,
+  "full_rank": 0.0,
+  "mu": null,
+  "mu_definition": "smallest nonzero eigenvalue (G is not full rank)",
+  "products": 971
+}
