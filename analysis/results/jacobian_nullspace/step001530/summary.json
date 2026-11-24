@@ -1,0 +1,23 @@
+{
+  "n": 38633472,
+  "rank": 38633472,
+  "nullity": 0,
+  "largest_eig_JtJ": 661.4155668087641,
+  "smallest_positive_eig_JtJ": 0.009095330103018827,
+  "smallest_eig_JtJ": 0.009095330103018827,
+  "zero_threshold": 0.000661415566808764,
+  "verdict": "J full column rank (numerically)",
+  "null_rows": [],
+  "seconds": 4539.2968282699585,
+  "config": {
+    "ckpt": "/home/alex/Projects/uni/EPFL/ML/llm-optimizer-conditioning/analysis/weights/model_step001530.safetensors",
+    "step": 1530,
+    "shard": "/home/alex/Projects/uni/EPFL/ML/llm-optimizer-conditioning/analysis/fineweb10B/fineweb_val_000000.bin",
+    "S": 4096,
+    "W": 128,
+    "tchunk": 1024,
+    "jchunk": 64,
+    "zero_tol": 1e-06,
+    "out": "results/jacobian_nullspace"
+  }
+}

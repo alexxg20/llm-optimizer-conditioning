@@ -57,6 +57,7 @@ lower bound on λ_max of the full G. For `lm_head`, hidden states are cached onc
 | `run_power.py` | driver for one checkpoint: data windows, parameter block, results + `results/index.csv` |
 | `mu_block.py` | μ (smallest, or smallest nonzero, eigenvalue of G) of one block: `lm_head`, `wte` or one attention layer |
 | `mu_float64.py` | μ of `lm_head` in float64, with a residual bound and a full-rank check |
+| `jacobian_nullspace.py` | exact rank of the lm_head Jacobian (before the softmax) from the eigenvalues of its 768 × 768 row blocks, and its null vectors |
 | `linf_smooth.py` | L∞ smoothness of one block: max of xᵀGx over sign vectors, by sign power iteration (`--mode small` checks it against brute force) |
 | `compare.py` | tables and plots of one experiment from the index |
 | `val_check.py` | sanity check: validation loss of a checkpoint |
