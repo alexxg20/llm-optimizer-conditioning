@@ -16,3 +16,11 @@ pretraining/training_feasibility_report.md
 pretraining/oom_failures.json
 *.pt
 *.pt.tmp
+
+# Analysis: downloaded weights and shards, per-machine env overrides
+analysis/weights/
+analysis/fineweb10B/
+analysis/fineweb100B/
+analysis/env.local.sh
+# Eigenvectors (~154 MB each for lm_head) and sign vectors, wherever --out puts them
+*.npy

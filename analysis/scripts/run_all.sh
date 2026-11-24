@@ -1,9 +1,8 @@
 #!/bin/bash
-# ~/ML_project/analysis/run_all.sh
 # lambda_max of the lm_head Gauss-Newton block at all 11 checkpoints, one after another.
-# Launch with:  nohup bash run_all.sh > logs_checkpoints.txt 2>&1 &
+# Launch with:  setsid nohup bash scripts/run_all.sh > logs/run_all.txt 2>&1 < /dev/null &
 
-source ~/ML_project/analysis/env.sh        # venv, paths ($W8, $VAL10), cd into analysis/
+source "$(dirname "${BASH_SOURCE[0]}")/../env.sh" || exit 1        # venv, paths ($W8, $VAL10), cd into analysis/
 S=4096; W=128
 
 # wait until no other power-method run is using the GPU

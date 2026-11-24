@@ -1,4 +1,3 @@
-# ~/ML_project/analysis/load.py
 import sys
 from pathlib import Path
 import torch

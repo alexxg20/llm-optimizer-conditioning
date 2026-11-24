@@ -1,4 +1,3 @@
-# ~/ML_project/analysis/mu_float64.py
 """mu for the output layer (lm_head) at one checkpoint, in float64, with a checked error bound.
 
 Steps:

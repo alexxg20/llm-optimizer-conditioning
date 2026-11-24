@@ -1,4 +1,3 @@
-# ~/ML_project/analysis/run_power.py
 """Largest eigenvalue of the Gauss-Newton matrix (Hessian of the prox loss) at one checkpoint.
 
 Example:

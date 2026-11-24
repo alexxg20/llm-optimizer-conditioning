@@ -1,4 +1,4 @@
-# ~/ML_project/analysis/val_check.py
+import os
 import numpy as np
 import torch
 from pathlib import Path
@@ -6,8 +6,9 @@ from load import load_model
 
 #Used to validate if the taken weights are correct
 
-CKPT = "/home/ML_project/nano_gpt/weights/model_step000153.safetensors"
-VAL = Path(__file__).resolve().parent / "fineweb100B" / "fineweb_val_000000.bin"
+HERE = Path(__file__).resolve().parent
+CKPT = os.path.join(os.environ.get("W8") or HERE / "weights", "model_step000153.safetensors")   # W8 is set by env.sh
+VAL = HERE / "fineweb100B" / "fineweb_val_000000.bin"
 S = 1024
 ATTN_BLOCKSIZE = 192
 N_WINDOWS = 8

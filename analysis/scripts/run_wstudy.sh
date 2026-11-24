@@ -1,5 +1,5 @@
 #!/bin/bash
-source ~/ML_project/analysis/env.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../env.sh" || exit 1
 prev=""
 for W in 8 16 32 64 128; do
   python run_power.py --ckpt $W8/model_step000918.safetensors --step 918 \

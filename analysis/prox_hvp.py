@@ -1,4 +1,3 @@
-# ~/ML_project/analysis/prox_hvp.py
 import numpy as np
 import torch
 import torch.nn.functional as F

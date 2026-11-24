@@ -55,6 +55,9 @@ lower bound on λ_max of the full G. For `lm_head`, hidden states are cached onc
 | `prox_hvp.py` | G·v for one window, average over windows, cached-hidden-state version for lm_head |
 | `power_method.py` | power iteration with convergence history and warm start |
 | `run_power.py` | driver for one checkpoint: data windows, parameter block, results + `results/index.csv` |
+| `mu_block.py` | μ (smallest, or smallest nonzero, eigenvalue of G) of one block: `lm_head`, `wte` or one attention layer |
+| `mu_float64.py` | μ of `lm_head` in float64, with a residual bound and a full-rank check |
+| `linf_smooth.py` | L∞ smoothness of one block: max of xᵀGx over sign vectors, by sign power iteration (`--mode small` checks it against brute force) |
 | `compare.py` | tables and plots of one experiment from the index |
 | `val_check.py` | sanity check: validation loss of a checkpoint |
 | `download_shards.py`, `cached_fineweb100B.py` | FineWeb shard download (10B sample used for final results) |
@@ -67,18 +70,36 @@ Eigenvectors (`*_eigvec.npy`, 154 MB each), data shards and model weights are no
 
 ## Running
 
+Reference environment: EPFL Gnoto with a Tesla V100 (9.3 GiB, compute capability 7.0). Its image
+provides Python 3.13 and PyTorch 2.9.1 + CUDA 12.8; the other packages are pinned in `requirements.txt`.
+The published results were computed with Python 3.12 and PyTorch 2.5.1 + CUDA 12.1.
+
 ```bash
-cp env.example.sh env.sh            # edit the paths, then:
-source env.sh
-python download_shards.py 1 2 10 11 # validation shard + some training shards (FineWeb-10B)
+git clone https://github.com/alexxg20/llm-optimizer-conditioning.git
+cd llm-optimizer-conditioning/analysis
+python -m venv --system-site-packages .venv   # reuses the image's PyTorch
+.venv/bin/pip install -r requirements.txt
+source env.sh                                 # venv, $W8 / $D10 / $VAL10, cd into analysis/
+python download_shards.py 1 2 10 11           # validation shard + some training shards -> fineweb10B/
+hf auth login                                 # the weights repository is private (organization members)
+hf download epfl-optimizer-conditioning/modded-nanogpt-1gpu \
+    weights/model_step000918.safetensors --local-dir .   # -> weights/
+# all 11 checkpoints (~15.4 GiB), needed by scripts/run_all.sh:
+#   hf download epfl-optimizer-conditioning/modded-nanogpt-1gpu --include "weights/*" --local-dir .
 python run_power.py --ckpt $W8/model_step000918.safetensors --step 918 --shard $VAL10 \
     --S 4096 --W 128 --params lm_head --exp my_test
 python compare.py --exp my_test --x step
+python linf_smooth.py --ckpt $W8/model_step000918.safetensors --step 918 --shard $VAL10 \
+    --block lm_head --mode small
 setsid nohup bash scripts/run_all.sh > logs/run_all.txt 2>&1 < /dev/null &   # full sweep, ~4 h
 ```
 
-Environment: Python 3.12, PyTorch 2.5.1 + CUDA 12.1 (Tesla V100, compute capability 7.0),
-numpy, scipy, matplotlib, pandas, safetensors, huggingface_hub.
+- `source <clone>/analysis/env.sh` works from any directory. To keep weights, shards or a venv
+  elsewhere, set `VENV`, `W8`, `D10` or `VAL10` in `analysis/env.local.sh` (gitignored), e.g.
+  `W8=/scratch/weights`, and download there (`--local-dir /scratch` for `hf download`).
+- Without the Gnoto image, create the venv without `--system-site-packages` and install PyTorch first:
+  `.venv/bin/pip install torch==2.9.1 --index-url https://download.pytorch.org/whl/cu128`.
+- `val_check.py` reads the FineWeb-100B validation shard: `python cached_fineweb100B.py 0`.
 
 ## Open points
 

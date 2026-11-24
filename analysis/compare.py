@@ -1,4 +1,3 @@
-# ~/ML_project/analysis/compare.py
 """Compare power-method runs recorded in results/index.csv.
 
 Usage:

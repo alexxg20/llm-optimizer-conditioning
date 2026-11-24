@@ -1,4 +1,3 @@
-# ~/ML_project/analysis/linf_smooth.py
 """L_inf smoothness of one block: sup of x^T G x over sign vectors x in {-1,+1}^n.
 
   --mode small  validate the heuristic on a random subset of n_small coordinates,

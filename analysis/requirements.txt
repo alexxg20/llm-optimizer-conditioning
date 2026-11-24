@@ -1,0 +1,11 @@
+# torch comes from the Gnoto image (2.9.1+cu128): install into `python -m venv --system-site-packages .venv`
+# so the CUDA build matching the V100 is reused rather than downloaded again (elsewhere: see README).
+# These four match the Gnoto image, so the venv leaves them as they are.
+numpy==2.5.3
+scipy==1.18.1
+matplotlib==3.11.1
+pandas==3.0.5
+# Not in the Gnoto image. load.py reads the checkpoints with safetensors; the hf CLI and
+# download_shards.py come with huggingface-hub (same pin as pretraining/requirements.txt).
+safetensors==0.8.0
+huggingface-hub==2.4.0

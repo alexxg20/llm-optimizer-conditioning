@@ -1,4 +1,3 @@
-# ~/ML_project/analysis/linearize.py
 import torch
 from torch.func import functional_call, jvp, vjp
 

@@ -1,5 +1,5 @@
 #!/bin/bash
-source ~/ML_project/analysis/env.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../env.sh" || exit 1
 S=4096; W=128
 while pgrep -f "python run_power.py" > /dev/null; do sleep 60; done
 prev="--init $(ls -t results/checkpoints/step000153_*_eigvec.npy | head -n 1)"

@@ -1,5 +1,5 @@
 #!/bin/bash
-source ~/ML_project/analysis/env.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../env.sh" || exit 1
 for step in 1530 765; do
   s6=$(printf "%06d" $step)
   echo "===== step $step random start $(date) ====="

@@ -1,4 +1,3 @@
-# ~/ML_project/analysis/power_method.py
 import time
 import numpy as np
 

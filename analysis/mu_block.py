@@ -1,4 +1,3 @@
-# ~/ML_project/analysis/mu_block.py
 """mu for one parameter block of the Gauss-Newton matrix G.
 
   G is full rank      ->  mu = smallest eigenvalue of G
