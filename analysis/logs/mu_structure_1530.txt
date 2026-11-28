@@ -1,0 +1,57 @@
+checkpoint step: 1530
+loaded /home/alex/Projects/uni/EPFL/ML/llm-optimizer-conditioning/analysis/weights/model_step001530.safetensors with 625.8M parameters
+[   49 s] setup; V = 50,304, d = 768, N = 524,288; 269 identical rows in 1 group(s), largest 269; target counts of identical rows: max 0
+[   96 s] pass A done
+
+C = mean h h^T: lambda_min 1.2258e-02, lambda_max 6.6580e+02
+smallest p_tk: 1.616e-23   (soft-cap floor e^-60/V = 1.741e-31)
+
+1. Full rank: smallest principal angle between diag(D_j) col(H) and diag(D_k) col(H)
+   rows (   13,    11), targets ( 20294,  19094): 1 - cos = 1.911e-05 (angle 6.182e-03 rad); pessimistic error on cos 1.1e-07
+   rows (   13,    63), targets ( 20294,      0): 1 - cos = 5.478e-05 (angle 1.047e-02 rad); pessimistic error on cos 1.1e-07
+   rows (17298, 17304), targets (     3,      3): 1 - cos = 3.197e-05 (angle 7.997e-03 rad); pessimistic error on cos 1.1e-07
+   -> G is nonsingular (kernel = {0})
+
+6. Block-Jacobi ratio x^T G x / x^T B x on shift directions 1_S v^T:
+   S = all rows          : min 3.879e-03, max 1.669e-02
+   S = top 10 targets    : min 3.998e-01, max 9.794e-01
+   S = top 100 targets   : min 1.735e-01, max 8.592e-01
+   S = top 1000 targets  : min 7.604e-02, max 6.267e-01
+   S = top 10000 targets : min 3.076e-02, max 3.371e-01
+   curvature of the 768 shift directions (eigenvalues of A = K / V): [7.994e-10, 4.603e-05]
+[  135 s] pass B rows 256/2048, running min 2.5855e-14
+[  160 s] pass B rows 512/2048, running min 2.5855e-14
+[  186 s] pass B rows 768/2048, running min 2.5855e-14
+[  211 s] pass B rows 1024/2048, running min 2.5855e-14
+[  251 s] pass B rows 1280/2048, running min 2.5855e-14
+[  276 s] pass B rows 1536/2048, running min 2.5855e-14
+[  301 s] pass B rows 1792/2048, running min 2.5855e-14
+[  329 s] pass B rows 2048/2048, running min 2.5855e-14
+[  368 s] pass C done
+
+2. Row blocks: lambda_min(G_jj), float32 screen of 2048 rows (s_j up to 1.158e-07)
+   row 36130 (targets    0): s_j 3.666e-12, float32 2.58549e-14, float64 2.58550e-14
+   row 38250 (targets    0): s_j 4.707e-12, float32 2.81592e-14, float64 2.81602e-14
+   row 23614 (targets    0): s_j 4.161e-12, float32 2.82206e-14, float64 2.82207e-14
+   row 28500 (targets    0): s_j 4.274e-12, float32 2.88493e-14, float64 2.88494e-14
+   row 31727 (targets    0): s_j 4.658e-12, float32 3.14722e-14, float64 3.14724e-14
+   row 36940 (targets    0): s_j 4.760e-12, float32 3.18004e-14, float64 3.18006e-14
+   row 39655 (targets    0): s_j 4.959e-12, float32 3.33636e-14, float64 3.33638e-14
+   row 37226 (targets    0): s_j 5.380e-12, float32 3.41312e-14, float64 3.41314e-14
+   rows with lambda_min(G_jj) below 3e-14, 1e-13, 1e-12: [4, 81, 215]
+
+3. Identical rows: exact eigenvalues of G
+   group of 269 rows (e.g. [90, 124, 125, 173, 174, 177]): eigenvalue 2.68559e-14, repeated >= 268 times (its own row block: 2.68559e-14)
+
+4. Rayleigh-Ritz on 2048 row vectors: lambda_i(G) <= theta_i
+   theta_1..5 = [2.58550e-14 2.81602e-14 2.82207e-14 2.88494e-14 3.14724e-14]
+   theta_10, 100, 1000, 2048: 3.765e-14, 1.391e-13, 1.125e-10, 7.018e-10
+   theta_1 below the best single-row quotient by 3.30e-15 (relative); largest coupling / sqrt(diag diag) = 6.58e-05
+   with the identical-row eigenvectors, eigenvalues of G below 3e-14, 1e-13, 1e-12: at least [272, 69493, 196391]
+[  402 s] passes D, E done
+
+5. Best row 36130: theta = 2.585497e-14, ||G x - theta x|| = 2.843e-14, r^T G r / r^T r = 3.015e+00
+   one Rayleigh-Ritz step on span(x, r): 2.5854970453e-14 (lower by 1.0e-14, relative)
+
+mu = lambda_min(G) <= 2.5855e-14; kappa >= 3.93e+14 (lambda_max = 10.156249046325684)
+saved results/mu_structure/step001530/summary.json and results/mu_structure/step001530/spectrum.npz

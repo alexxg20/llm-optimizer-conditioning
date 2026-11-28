@@ -1,0 +1,8 @@
+checkpoint step: 1530
+loaded /home/alex/Projects/uni/EPFL/ML/llm-optimizer-conditioning/analysis/weights/model_step001530.safetensors with 625.8M parameters
+tokens seen >= m    rows  min lmin(G_jj)     (row, count)   lmin(A_R)    mu_R <=  lmax(G_RR) >=  kappa_R >=
+               1   32416       2.130e-13       (34386, 1)   5.153e-09  2.130e-13         9.9723    4.68e+13
+              10    6207       3.917e-11      (37412, 13)   1.041e-07  3.917e-11         9.9723    2.55e+11
+             100     516       1.839e-09      (1378, 121)   1.524e-06  1.839e-09         9.9723    5.42e+09
+            1000      44       1.086e-08      (247, 3076)   1.426e-05  1.086e-08         9.9723    9.18e+08
+saved results/mu_structure/step001530/by_frequency.json (177 s)

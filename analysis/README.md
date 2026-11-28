@@ -42,6 +42,41 @@ history; `summary.csv` and the overview plots summarise each experiment; `result
   sign descent lowers the loss 86.5× more than gradient descent, Adam's next update 80× more and Adam without
   momentum 104× more. The quadratic predicts the actual loss change within 5% for every direction.
 
+### μ of lm_head at step 1530 (`results/mu_structure/step001530`)
+
+G is full rank, but μ = λ_min(G) ≤ 2.586 × 10⁻¹⁴, so κ = L/μ ≥ 3.9 × 10¹⁴. The bounds come from 768 × 768
+blocks of G and small projections of it, not from an eigensolver on the full matrix. "Target count" means
+the number of times a token is the target in the 524,288 evaluation tokens.
+
+- **Full rank** (`mu_structure.py`): every softmax probability is positive, so Gx = 0 would need all capped
+  logits to move by the same amount at every token. For two rows j, k that needs two 768-dimensional
+  subspaces of ℝ^524,288 (the hidden states scaled by each row's soft-cap slopes) to share a direction.
+  For rows 13 and 11 the cosine of their smallest principal angle is 1 − 1.9 × 10⁻⁵, against a pessimistic
+  rounding error of 1.1 × 10⁻⁷, so the kernel is {0}. Without the soft cap it would be the 768 shift
+  directions ΔW = 1vᵀ.
+- **Upper bounds**: the row block of token 36130 (target count 0) gives μ ≤ 2.586 × 10⁻¹⁴. 269 rows are
+  bitwise identical; since lm_head starts at zero, they cannot have been a target during training (a target
+  would have separated them). Differences of identical rows are exact eigenvectors of G, which brings the
+  eigenvalues of a 768 × 768 matrix into G, each repeated 268 times; the smallest is 2.686 × 10⁻¹⁴. In all,
+  at least 272 eigenvalues lie below 3 × 10⁻¹⁴ and at least 69,493 below 10⁻¹³. So λ₂ − λ₁ < 3 × 10⁻¹⁴
+  (3 × 10⁻¹⁵ of λ_max), and no eigensolver can separate λ₁ from the rest; whether λ₁ is far below this
+  cluster would need a lower bound. The shift directions have curvature 8.0 × 10⁻¹⁰ to 4.6 × 10⁻⁵.
+- **By target count** (`mu_by_frequency.py`, `by_frequency.json`): restricted to the rows of tokens with
+  target count at least 1, 10, 100 or 1,000, μ ≤ 2.2 × 10⁻¹³, 4.0 × 10⁻¹¹, 1.9 × 10⁻⁹, 1.1 × 10⁻⁸. The
+  restricted block's λ_max is at least 9.97 (its sharpest row), so κ ≥ 9.1 × 10⁸ even for the 44 most
+  frequent tokens.
+- **Eigensolvers** (`lanczos_feasibility.py`, `lanczos_feasibility.json`): float32 products of G are off by
+  6.4 × 10⁻⁷ relative (`mu_float64.log`), far above μ, so float32 cannot resolve it; `mu_block.py`'s
+  2.77 × 10⁻⁷ (971 products) is not μ. On a model of the spectrum (row weights × hidden-state eigenvalues,
+  38.6M eigenvalues, minimum 4.5 × 10⁻¹⁴), float64 Lanczos without reorthogonalization is at 3.0 × 10⁻¹⁰
+  after 60,000 products; extrapolating the last two points (slope −2.7 in log–log) gives about 2 × 10⁶
+  products to reach 2.6 × 10⁻¹⁴. ARPACK on a 2M-eigenvalue sample of the model reports a false convergence
+  at 5.8 × 10⁻⁷ after 93 products with `mu_block.py`'s settings, and does not converge in 25,528 products
+  with `mu_float64.py`'s settings.
+
+Run `mu_structure.py` first (≈ 8 min on an RTX 5070 Ti); it writes `spectrum.npz`, which
+`mu_by_frequency.py` and `lanczos_feasibility.py` read.
+
 ## How it works
 
 For each checkpoint θ_ref and token window, G·v = Jᵀ H_ℓ J v is computed without forming J:
@@ -65,6 +100,9 @@ lower bound on λ_max of the full G. For `lm_head`, hidden states are cached onc
 | `run_power.py` | driver for one checkpoint: data windows, parameter block, results + `results/index.csv` |
 | `mu_block.py` | μ (smallest, or smallest nonzero, eigenvalue of G) of one block: `lm_head`, `wte` or one attention layer |
 | `mu_float64.py` | μ of `lm_head` in float64, with a residual bound and a full-rank check |
+| `mu_structure.py` | μ of lm_head from the structure of G: full-rank certificate, row-block and identical-row bounds, Rayleigh–Ritz, shift directions |
+| `mu_by_frequency.py` | upper bounds on μ of lm_head restricted to the rows of frequent tokens |
+| `lanczos_feasibility.py` | Lanczos and ARPACK on a matrix with the spectrum shape of lm_head's G and a known minimum |
 | `jacobian_nullspace.py` | exact rank of the lm_head Jacobian (before the softmax) from the eigenvalues of its 768 × 768 row blocks, and its null vectors |
 | `linf_smooth.py` | L∞ smoothness of one block: max of xᵀGx over sign vectors, by sign power iteration (`--mode small` checks it against brute force) |
 | `direction_curvature.py` | one step of GD, sign descent and Adam on the quadratic model of lm_head: best step size, predicted and actual loss decrease (needs the full checkpoint with the optimizer state) |
@@ -72,7 +110,7 @@ lower bound on λ_max of the full G. For `lm_head`, hidden states are cached onc
 | `val_check.py` | sanity check: validation loss of a checkpoint |
 | `download_shards.py`, `cached_fineweb100B.py` | FineWeb shard download (10B sample used for final results) |
 | `scripts/` | `run_all.sh` (sweep), `run_resume.sh` (resume the sweep), `run_wstudy.sh` (window study), `run_check_now.sh` (random-start checks) |
-| `results/<experiment>/` | `checkpoints` (main sweep), `W_study_918` (number of windows), `warm_check` (random starts): one `.json` per run, `summary.csv`, overview plots; `linf`, `direction_curvature`: one `.json` per run |
+| `results/<experiment>/` | `checkpoints` (main sweep), `W_study_918` (number of windows), `warm_check` (random starts): one `.json` per run, `summary.csv`, overview plots; `linf`, `direction_curvature`: one `.json` per run; `mu_structure/step001530`: μ of lm_head |
 | `results/index.csv` | one row per run, all experiments |
 | `logs/` | raw logs of the runs |
 
@@ -114,6 +152,8 @@ setsid nohup bash scripts/run_all.sh > logs/run_all.txt 2>&1 < /dev/null &   # f
 ## Open points
 
 - Dependence of λ_max on the data (seen vs unseen text, other shards) at the late checkpoints: not yet measured.
-- Only the lm_head block so far (lower bound on the full L); next: attention/MLP and embedding blocks,
-  Adam-preconditioned curvature, Muon.
+- Only the lm_head block so far (lower bound on the full L); next: one attention block, then MLP and
+  embedding blocks, Adam-preconditioned curvature, Muon.
+- μ of lm_head has only an upper bound. A lower bound needs a preconditioned eigensolver (diagonal row
+  blocks plus a correction for the shift directions).
 - The quadratic model is a weak predictor of the dynamics before ≈ 50–60% of training (paper, Table 1).

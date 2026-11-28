@@ -1,0 +1,71 @@
+{
+  "n": 38633472,
+  "lambda_max": 9.430175008662806,
+  "lambda_min": 4.4940648294687276e-14,
+  "trace": 388.150897307397,
+  "random_rayleigh_quotient": 9.572277887186307e-06,
+  "config": {
+    "step": 1530,
+    "kmax": 60000,
+    "sample": 2000000,
+    "cap": 30000,
+    "out": "results/mu_structure"
+  },
+  "eigenvalues_above_L_over_T": 7220,
+  "lanczos": [
+    {
+      "k": 10,
+      "ritz_min": 4.508159385478075e-06
+    },
+    {
+      "k": 30,
+      "ritz_min": 1.7992544521956972e-06
+    },
+    {
+      "k": 100,
+      "ritz_min": 7.994659998712496e-07
+    },
+    {
+      "k": 300,
+      "ritz_min": 4.6766996925085156e-07
+    },
+    {
+      "k": 1000,
+      "ritz_min": 2.1041601643098214e-07
+    },
+    {
+      "k": 3000,
+      "ritz_min": 8.237566057021263e-08
+    },
+    {
+      "k": 10000,
+      "ritz_min": 1.9443717546057866e-08
+    },
+    {
+      "k": 30000,
+      "ritz_min": 1.989334264110188e-09
+    },
+    {
+      "k": 60000,
+      "ritz_min": 3.0341662117382927e-10
+    }
+  ],
+  "arpack": [
+    {
+      "settings": "mu_block.py settings (tol 1e-6, default maxiter)",
+      "true_min": 4.4940648294687276e-14,
+      "converged": true,
+      "products": 93,
+      "reported_min": 5.811624355089862e-07,
+      "rayleigh_quotient": 5.811624107857267e-07,
+      "seconds": 3.5204060077667236
+    },
+    {
+      "settings": "mu_float64.py settings (tol 1e-9, maxiter 1500)",
+      "true_min": 4.4940648294687276e-14,
+      "converged": false,
+      "products": 25528,
+      "seconds": 1069.33709359169
+    }
+  ]
+}

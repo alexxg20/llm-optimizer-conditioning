@@ -1,0 +1,74 @@
+{
+  "cutoffs": [
+    {
+      "min_count": 1,
+      "rows": 32416,
+      "row_bound": 2.1304162487188702e-13,
+      "flattest_row": 34386,
+      "its_count": 1,
+      "shift_bound": 5.152709391292805e-09,
+      "mu_upper_bound": 2.1304162487188702e-13,
+      "sharpest_row": 262,
+      "lambda_max_lower_bound": 9.972301294571004,
+      "kappa_lower_bound": 46809168398747.734,
+      "L_over_mu_R": 47672604132798.76
+    },
+    {
+      "min_count": 10,
+      "rows": 6207,
+      "row_bound": 3.917350946213069e-11,
+      "flattest_row": 37412,
+      "its_count": 13,
+      "shift_bound": 1.0407219100743345e-07,
+      "mu_upper_bound": 3.917350946213069e-11,
+      "sharpest_row": 262,
+      "lambda_max_lower_bound": 9.972301294571004,
+      "kappa_lower_bound": 254567472547.01035,
+      "L_over_mu_R": 259263190502.34195
+    },
+    {
+      "min_count": 100,
+      "rows": 516,
+      "row_bound": 1.8385696860626998e-09,
+      "flattest_row": 1378,
+      "its_count": 121,
+      "shift_bound": 1.5238676405964966e-06,
+      "mu_upper_bound": 1.8385696860626998e-09,
+      "sharpest_row": 262,
+      "lambda_max_lower_bound": 9.972301294571004,
+      "kappa_lower_bound": 5423945238.609206,
+      "L_over_mu_R": 5523994615.659801
+    },
+    {
+      "min_count": 1000,
+      "rows": 44,
+      "row_bound": 1.0858408236794165e-08,
+      "flattest_row": 247,
+      "its_count": 3076,
+      "shift_bound": 1.4258108211699267e-05,
+      "mu_upper_bound": 1.0858408236794165e-08,
+      "sharpest_row": 262,
+      "lambda_max_lower_bound": 9.972301294571004,
+      "kappa_lower_bound": 918394397.8804784,
+      "L_over_mu_R": 935334979.5701008
+    }
+  ],
+  "seconds": 177.01110172271729,
+  "config": {
+    "ckpt": "/home/alex/Projects/uni/EPFL/ML/llm-optimizer-conditioning/analysis/weights/model_step001530.safetensors",
+    "step": 1530,
+    "shard": "/home/alex/Projects/uni/EPFL/ML/llm-optimizer-conditioning/analysis/fineweb10B/fineweb_val_000000.bin",
+    "lam_max": 10.156249046325684,
+    "S": 4096,
+    "W": 128,
+    "chunk": 1024,
+    "per": 16,
+    "cutoffs": [
+      1,
+      10,
+      100,
+      1000
+    ],
+    "out": "results/mu_structure"
+  }
+}
