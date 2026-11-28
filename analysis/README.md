@@ -34,6 +34,14 @@ How we know the numbers are reliable:
 Each run in `results/<experiment>/` has a `.json` with its settings, window positions and full convergence
 history; `summary.csv` and the overview plots summarise each experiment; `results/index.csv` lists all runs.
 
+### Other geometries at step 918 (lm_head)
+
+- **L∞ smoothness** (`results/linf`): max of xᵀGx over sign vectors x ∈ {±1}ⁿ is at least 4,964 (best of
+  10 restarts of sign power iteration, `linf_smooth.py --mode full`). The trivial upper bound n·λ_max is 4.5 × 10⁸.
+- **One step on the quadratic** (`results/direction_curvature`): with the best step size for each direction,
+  sign descent lowers the loss 86.5× more than gradient descent, Adam's next update 80× more and Adam without
+  momentum 104× more. The quadratic predicts the actual loss change within 5% for every direction.
+
 ## How it works
 
 For each checkpoint θ_ref and token window, G·v = Jᵀ H_ℓ J v is computed without forming J:
@@ -59,11 +67,12 @@ lower bound on λ_max of the full G. For `lm_head`, hidden states are cached onc
 | `mu_float64.py` | μ of `lm_head` in float64, with a residual bound and a full-rank check |
 | `jacobian_nullspace.py` | exact rank of the lm_head Jacobian (before the softmax) from the eigenvalues of its 768 × 768 row blocks, and its null vectors |
 | `linf_smooth.py` | L∞ smoothness of one block: max of xᵀGx over sign vectors, by sign power iteration (`--mode small` checks it against brute force) |
+| `direction_curvature.py` | one step of GD, sign descent and Adam on the quadratic model of lm_head: best step size, predicted and actual loss decrease (needs the full checkpoint with the optimizer state) |
 | `compare.py` | tables and plots of one experiment from the index |
 | `val_check.py` | sanity check: validation loss of a checkpoint |
 | `download_shards.py`, `cached_fineweb100B.py` | FineWeb shard download (10B sample used for final results) |
 | `scripts/` | `run_all.sh` (sweep), `run_resume.sh` (resume the sweep), `run_wstudy.sh` (window study), `run_check_now.sh` (random-start checks) |
-| `results/<experiment>/` | `checkpoints` (main sweep), `W_study_918` (number of windows), `warm_check` (random starts): one `.json` per run, `summary.csv`, overview plots |
+| `results/<experiment>/` | `checkpoints` (main sweep), `W_study_918` (number of windows), `warm_check` (random starts): one `.json` per run, `summary.csv`, overview plots; `linf`, `direction_curvature`: one `.json` per run |
 | `results/index.csv` | one row per run, all experiments |
 | `logs/` | raw logs of the runs |
 

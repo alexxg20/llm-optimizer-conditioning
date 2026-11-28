@@ -1,0 +1,104 @@
+{
+  "config": {
+    "ckpt": "/home/alex/Projects/uni/EPFL/ML/llm-optimizer-conditioning/analysis/weights/model_step000918.safetensors",
+    "full": "full/ckpt_step000918.pt",
+    "step": 918,
+    "shard": "/home/alex/Projects/uni/EPFL/ML/llm-optimizer-conditioning/analysis/fineweb10B/fineweb_val_000000.bin",
+    "S": 4096,
+    "W": 128,
+    "chunk": 1024,
+    "lam_max": 11.70624,
+    "linf": 4963.937293642895,
+    "out": "results/direction_curvature",
+    "n": 38633472,
+    "N": 524288
+  },
+  "loss": 3.5580321752076998,
+  "grad_norm_2": 0.12891570664418087,
+  "grad_norm_1": 30.308166690362643,
+  "phi": 0.0014306846816683956,
+  "rho_lower_bound": 1.0976025893513306e-05,
+  "grad_check": 3.4749604083117447e-07,
+  "adam": {
+    "t": 918.0,
+    "lr": 0.008,
+    "eps": 1e-08,
+    "betas": [
+      0.8,
+      0.95
+    ]
+  },
+  "rows": [
+    {
+      "direction": "gd",
+      "step": "best",
+      "eta": 0.2556212836978481,
+      "gTd": 0.016619259419568495,
+      "dGd": 0.06501516297529024,
+      "curvature_per_unit_length": 3.912037313692664,
+      "predicted_decrease": 0.0021241182134688263,
+      "actual_decrease": 0.0020190614231978543
+    },
+    {
+      "direction": "gd",
+      "step": "1/lam_max",
+      "eta": 0.08542452572303319,
+      "gTd": 0.016619259419568495,
+      "dGd": 0.06501516297529024,
+      "curvature_per_unit_length": 3.912037313692664,
+      "predicted_decrease": 0.0011824731671812262,
+      "actual_decrease": 0.0011767622718252824
+    },
+    {
+      "direction": "sign",
+      "step": "best",
+      "eta": 0.012126241264488373,
+      "gTd": 30.308166690362643,
+      "dGd": 2499.3867455960926,
+      "curvature_per_unit_length": 6.469485180094848e-05,
+      "predicted_decrease": 0.18376207078583376,
+      "actual_decrease": 0.1875907565236048
+    },
+    {
+      "direction": "adam",
+      "step": "best",
+      "eta": 0.04706681468777329,
+      "gTd": 7.232544530546291,
+      "dGd": 153.66547701442636,
+      "curvature_per_unit_length": 4.485806138406343e-05,
+      "predicted_decrease": 0.17020641657014524,
+      "actual_decrease": 0.1675284034026845
+    },
+    {
+      "direction": "adam",
+      "step": "adam lr",
+      "eta": 0.008,
+      "gTd": 7.232544530546291,
+      "dGd": 153.66547701442636,
+      "curvature_per_unit_length": 4.485806138406343e-05,
+      "predicted_decrease": 0.05294306097990869,
+      "actual_decrease": 0.052858418476716906
+    },
+    {
+      "direction": "adam_no_mom",
+      "step": "best",
+      "eta": 0.01141396198058308,
+      "gTd": 38.86513975539421,
+      "dGd": 3405.0524981167664,
+      "curvature_per_unit_length": 0.00010674272298013327,
+      "predicted_decrease": 0.22180261376905872,
+      "actual_decrease": 0.21980755199365376
+    },
+    {
+      "direction": "adam_no_mom",
+      "step": "adam lr",
+      "eta": 0.008,
+      "gTd": 38.86513975539421,
+      "dGd": 3405.0524981167664,
+      "curvature_per_unit_length": 0.00010674272298013327,
+      "predicted_decrease": 0.20195943810341718,
+      "actual_decrease": 0.20022272570895439
+    }
+  ],
+  "seconds": 260.34120988845825
+}

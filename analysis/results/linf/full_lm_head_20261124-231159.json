@@ -1,0 +1,34 @@
+{
+  "config": {
+    "ckpt": "/home/alex/Projects/uni/EPFL/ML/llm-optimizer-conditioning/analysis/weights/model_step000918.safetensors",
+    "step": 918,
+    "shard": "/home/alex/Projects/uni/EPFL/ML/llm-optimizer-conditioning/analysis/fineweb10B/fineweb_val_000000.bin",
+    "block": "lm_head",
+    "layer": 0,
+    "mode": "full",
+    "n_small": 20,
+    "restarts": 10,
+    "iters": 100,
+    "lam_max": 11.71,
+    "S": 4096,
+    "W": 128,
+    "seed": 0,
+    "out": "results",
+    "exp": "linf",
+    "n": 38633472
+  },
+  "best_value": 4963.937293642895,
+  "restart_values": [
+    4827.064252293488,
+    4934.752721485377,
+    4880.736139743772,
+    4888.190345832265,
+    4842.982791820257,
+    4920.156432692706,
+    4688.4658209306235,
+    4963.937293642895,
+    4874.164392994357,
+    4961.213914264419
+  ],
+  "upper_bound_n_lam_max": 452397957.12
+}

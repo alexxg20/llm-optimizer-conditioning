@@ -1,0 +1,20 @@
+checkpoint step: 918
+loaded /home/alex/Projects/uni/EPFL/ML/llm-optimizer-conditioning/analysis/weights/model_step000918.safetensors with 625.8M parameters
+block lm_head: 1 tensor(s), n = 38,633,472 parameters
+
+[full] sign power iteration on all 38,633,472 coordinates
+  restart 1/10: value 4.827064e+03, steps 60
+  restart 2/10: value 4.934753e+03, steps 54
+  restart 3/10: value 4.880736e+03, steps 44
+  restart 4/10: value 4.888190e+03, steps 54
+  restart 5/10: value 4.842983e+03, steps 44
+  restart 6/10: value 4.920156e+03, steps 57
+  restart 7/10: value 4.688466e+03, steps 47
+  restart 8/10: value 4.963937e+03, steps 40
+  restart 9/10: value 4.874164e+03, steps 58
+  restart 10/10: value 4.961214e+03, steps 48
+[full] best value (lower bound on the sup): 4.963937e+03  (18532 s)
+[full] upper bound n * lam_max = 4.523980e+08;  best / bound = 0.0000
+
+saved results/linf/full_lm_head_20261124-231159.json
+[W1125 04:20:53.279859829 AllocatorConfig.cpp:28] Warning: PYTORCH_CUDA_ALLOC_CONF is deprecated, use PYTORCH_ALLOC_CONF instead (function operator())

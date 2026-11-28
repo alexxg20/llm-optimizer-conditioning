@@ -1,0 +1,29 @@
+checkpoint step: 918
+loaded /home/alex/Projects/uni/EPFL/ML/llm-optimizer-conditioning/analysis/weights/model_step000918.safetensors with 625.8M parameters
+setup 48 s; Adam state at t = 918, lr = 8.000e-03, eps = 1e-08
+[check] gradient vs autograd on one chunk, relative difference: 3.47e-07
+loss at the checkpoint: 3.558032;  ||g||_2 = 1.2892e-01, ||g||_1 = 3.0308e+01
+gradient density phi = ||g||_1^2 / (n ||g||_2^2) = 1.4307e-03
+Adam: ||sqrt(v_hat)||_2 = 1.5643e-01 (RMS of training gradients); coordinates with sqrt(v_hat) < eps: 1.20%
+  gd          best         eta = 2.556e-01  predicted 2.1241e-03  actual 2.0191e-03
+  gd          1/lam_max    eta = 8.542e-02  predicted 1.1825e-03  actual 1.1768e-03
+  sign        best         eta = 1.213e-02  predicted 1.8376e-01  actual 1.8759e-01
+  adam        best         eta = 4.707e-02  predicted 1.7021e-01  actual 1.6753e-01
+  adam        adam lr      eta = 8.000e-03  predicted 5.2943e-02  actual 5.2858e-02
+  adam_no_mom best         eta = 1.141e-02  predicted 2.2180e-01  actual 2.1981e-01
+  adam_no_mom adam lr      eta = 8.000e-03  predicted 2.0196e-01  actual 2.0022e-01
+
+direction   step                eta  curv/|d|^2   predicted      actual
+gd          best          2.556e-01   3.912e+00  2.1241e-03  2.0191e-03
+gd          1/lam_max     8.542e-02   3.912e+00  1.1825e-03  1.1768e-03
+sign        best          1.213e-02   6.469e-05  1.8376e-01  1.8759e-01
+adam        best          4.707e-02   4.486e-05  1.7021e-01  1.6753e-01
+adam        adam lr       8.000e-03   4.486e-05  5.2943e-02  5.2858e-02
+adam_no_mom best          1.141e-02   1.067e-04  2.2180e-01  2.1981e-01
+adam_no_mom adam lr       8.000e-03   1.067e-04  2.0196e-01  2.0022e-01
+
+best-step decrease relative to GD: gd 1x, sign 86.5x, adam 80.1x, adam_no_mom 104x
+rho = L_inf / (n lam_max) >= 1.098e-05;  worst-case sign/GD ratio phi / rho <= 130
+
+saved results/direction_curvature/step000918_20261125-095324.json  (260 s)
+[W1125 09:53:25.237721352 AllocatorConfig.cpp:28] Warning: PYTORCH_CUDA_ALLOC_CONF is deprecated, use PYTORCH_ALLOC_CONF instead (function operator())
